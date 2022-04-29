@@ -50,32 +50,36 @@ endif()
 
 option(USE_SYSTEM_PROTOBUF "Use system installed protobuf" OFF)
 if(USE_SYSTEM_PROTOBUF)
-  find_package(Protobuf REQUIRED)
-  message(STATUS "Using protobuf ${Protobuf_VERSION}")
+    find_package(Protobuf REQUIRED)
+    message(STATUS "Using protobuf ${Protobuf_VERSION}")
 else()
-  FetchContent_Declare(
-    protobuf
-    GIT_REPOSITORY https://github.com/protocolbuffers/protobuf
-    GIT_TAG        v3.20.1
-  )
-  set(FETCHCONTENT_QUIET OFF)
-  FetchContent_MakeAvailable(protobuf)
+    include(FetchContent)
+    FetchContent_Declare(
+        protobuf
+        GIT_REPOSITORY https://github.com/protocolbuffers/protobuf
+        GIT_TAG        v3.19.1
+    )
+    set(FETCHCONTENT_QUIET OFF)
+    FetchContent_MakeAvailable(protobuf)
 endif()
 
 option(USE_SYSTEM_GRPC "Use system installed gRPC" OFF)
 if(USE_SYSTEM_GRPC)
-  find_package(gRPC CONFIG REQUIRED)
-  message(STATUS "Using gRPC ${gRPC_VERSION}")
+    find_package(gRPC CONFIG REQUIRED)
+    message(STATUS "Using grpc ${gRPC_VERSION}")
 else()
-  FetchContent_Declare(
-    gRPC
-    GIT_REPOSITORY https://github.com/grpc/grpc
-    GIT_TAG        v1.45.2
-  )
-  set(FETCHCONTENT_QUIET OFF)
-  FetchContent_MakeAvailable(gRPC)
+    include(FetchContent)
+    FetchContent_Declare(
+        gRPC
+        GIT_REPOSITORY https://github.com/grpc/grpc
+        GIT_TAG        v1.41.1
+    )
+    set(FETCHCONTENT_QUIET OFF)
+    FetchContent_MakeAvailable(gRPC)
 endif()
 
-set(_PROTOBUF_PROTOC $<TARGET_FILE:protobuf::protoc>)
-set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:gRPC::grpc_cpp_plugin>)
+set(_PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
+set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+
+add_subdirectory(src)
 
