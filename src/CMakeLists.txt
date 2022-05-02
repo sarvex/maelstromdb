@@ -30,14 +30,15 @@ foreach(target raft log)
 endforeach()
 
 add_executable(maelstromdb
-  raft/async_timer.cpp
   raft/concensus_module.cpp
   raft/global_ctx.cpp
   raft/raft_client.cpp
   raft/raft_server.cpp
   raft/snapshot.cpp
+  utils/async_executor.cpp
+  utils/timer.cpp
   utils/logger.cpp
-  main.cpp)
+  raft_node.cpp)
 target_link_libraries(maelstromdb
   grpc_raft_proto
   grpc_log_proto)
