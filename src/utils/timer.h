@@ -55,7 +55,7 @@ public:
 protected:
   std::atomic<bool> m_cancelled;
   std::shared_ptr<AsyncExecutor> m_executor;
-  std::shared_ptr<TimerQueue> m_timer_queue;
+  std::shared_ptr<TimerQueue> m_request_queue;
   time_point m_deadline;
   std::size_t m_delay;
 };

@@ -105,7 +105,7 @@ void TimerQueue::AddTimer(std::shared_ptr<TimerEvent> timer) {
 
   if (m_abort) {
     Logger::Error("Unable to schedule task, timer queue process was aborted");
-    std::runtime_error("Timer queue process was aborted");
+    throw std::runtime_error("Timer queue process was aborted");
   }
 
   auto prev_thread = UpdateWorkerThread(lock);
@@ -156,7 +156,7 @@ void TimerQueue::EventLoop() {
   while (true) {
     std::unique_lock<std::mutex> lock(m_lock);
     if (m_request_queue.empty()) {
-      auto result = m_cond.wait_for(lock, TimerEvent::milliseconds(1000), [this] {
+      auto result = m_cond.wait_for(lock, std::chrono::seconds(5), [this] {
         return !m_request_queue.empty() || m_abort.load();
       });
 
@@ -174,7 +174,7 @@ void TimerQueue::EventLoop() {
       return;
     }
 
-    m_process_queue.merge(std::move(m_request_queue));
+    m_process_queue = std::move(m_request_queue);
     lock.unlock();
 
     next_deadline = ProcessTimers();

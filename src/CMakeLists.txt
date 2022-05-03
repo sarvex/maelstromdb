@@ -31,7 +31,7 @@ endforeach()
 
 add_executable(maelstromdb
   raft/concensus_module.cpp
-  raft/global_ctx.cpp
+  raft/global_ctx_manager.cpp
   raft/raft_client.cpp
   raft/raft_server.cpp
   raft/snapshot.cpp
