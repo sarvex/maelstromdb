@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package maelstromdb.protos.raft;
+package protocol.raft;
 
 import "log.proto";
 

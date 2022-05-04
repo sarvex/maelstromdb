@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-package maelstromdb.protos.log;
+package protocol.log;
 
 message LogEntry {
   uint32 term = 1;
