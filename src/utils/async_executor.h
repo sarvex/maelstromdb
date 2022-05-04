@@ -20,7 +20,7 @@ public:
 
   virtual ~AsyncExecutor();
 
-  virtual void Enqueue(callback_t& callback);
+  virtual void Enqueue(callback_t&& callback);
 
   virtual void Shutdown();
 
@@ -36,13 +36,13 @@ protected:
   std::queue<callback_t> m_process_queue;
 };
 
-class SingleExecutor : public AsyncExecutor {
+class Strand : public AsyncExecutor {
 public:
-  SingleExecutor();
+  Strand();
 
-  ~SingleExecutor();
+  ~Strand();
 
-  void Enqueue(callback_t& callback) override;
+  void Enqueue(callback_t&& callback) override;
 
   void Shutdown() override;
 

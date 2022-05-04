@@ -7,7 +7,7 @@ AsyncExecutor::AsyncExecutor()
 AsyncExecutor::~AsyncExecutor() {
 }
 
-void AsyncExecutor::Enqueue(callback_t& callback) {
+void AsyncExecutor::Enqueue(callback_t&& callback) {
 }
 
 void AsyncExecutor::Shutdown() {
@@ -19,18 +19,18 @@ void AsyncExecutor::EventLoop() {
 void AsyncExecutor::ProcessEvents() {
 }
 
-SingleExecutor::SingleExecutor()
+Strand::Strand()
   : AsyncExecutor(), m_idle(false) {
   m_worker = std::thread([this] {
     EventLoop();
   });
 }
 
-SingleExecutor::~SingleExecutor() {
+Strand::~Strand() {
   Shutdown();
 }
 
-void SingleExecutor::Enqueue(callback_t& callback) {
+void Strand::Enqueue(callback_t&& callback) {
   std::unique_lock<std::mutex> lock(m_lock);
   if (m_abort) {
     Logger::Error("Unable to execute callback, executor process has been aborted");
@@ -48,31 +48,41 @@ void SingleExecutor::Enqueue(callback_t& callback) {
   }
 }
 
-void SingleExecutor::Shutdown() {
+void Strand::Shutdown() {
   const auto prev_state = m_abort.exchange(true);
   if (prev_state) {
     return;
   }
 
-  if (m_worker.joinable()) {
-    m_worker.join();
+  if (!m_worker.joinable()) {
+    return;
   }
 
   std::queue<callback_t> temp_request_queue{};
   std::queue<callback_t> temp_process_queue{};
 
-  std::unique_lock<std::mutex> lock(m_lock);
-  temp_request_queue = std::move(m_request_queue);
-  temp_process_queue = std::move(m_process_queue);
+  {
+    std::unique_lock<std::mutex> lock(m_lock);
+    temp_request_queue = std::move(m_request_queue);
+    temp_process_queue = std::move(m_process_queue);
+  }
+
+  m_cond.notify_one();
+  m_worker.join();
 }
 
-void SingleExecutor::EventLoop() {
+void Strand::EventLoop() {
   while (true) {
     std::unique_lock<std::mutex> lock(m_lock);
     if (m_request_queue.empty()) {
       auto result = m_cond.wait_for(lock, std::chrono::seconds(5), [this] {
         return !m_request_queue.empty() || m_abort.load();
       });
+
+      if (!result) {
+        m_idle = true;
+        return;
+      }
     }
 
     if (m_abort.load()) {
@@ -86,7 +96,7 @@ void SingleExecutor::EventLoop() {
   }
 }
 
-void SingleExecutor::ProcessEvents() {
+void Strand::ProcessEvents() {
   while (!m_process_queue.empty()) {
     auto callback = std::move(m_process_queue.front());
     m_process_queue.pop();
@@ -99,7 +109,7 @@ void SingleExecutor::ProcessEvents() {
   }
 }
 
-std::thread SingleExecutor::UpdateWorkerThread(std::unique_lock<std::mutex>& lock) {
+std::thread Strand::UpdateWorkerThread(std::unique_lock<std::mutex>& lock) {
   assert(lock.owns_lock());
   if (!m_idle) {
     return {};

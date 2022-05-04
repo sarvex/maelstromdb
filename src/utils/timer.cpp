@@ -19,7 +19,7 @@ TimerEvent::~TimerEvent() {
 void TimerEvent::Execute() {
 }
 
-void TimerEvent::SetCallback(std::function<void()> func) {
+void TimerEvent::SetCallback(std::function<void()>&& func) {
 }
 
 TimerEvent::time_point TimerEvent::Deadline() const {
@@ -66,6 +66,27 @@ bool TimerEvent::operator<(const TimerEvent& rhs) {
   return Deadline() < rhs.Deadline();
 }
 
+TimerCallbackEvent::TimerCallbackEvent(
+    std::size_t delay,
+    std::shared_ptr<AsyncExecutor> executor,
+    std::shared_ptr<TimerQueue> timer_queue,
+    std::function<void()>&& callback)
+  : TimerEvent(delay, std::move(executor), std::move(timer_queue))
+  , m_callback(std::move(callback)) {
+}
+
+void TimerCallbackEvent::Execute() {
+  if (Cancelled()) {
+    return;
+  }
+
+  m_executor->Enqueue(std::move(m_callback));
+}
+
+void TimerCallbackEvent::SetCallback(std::function<void()>&& callback) {
+  m_callback = std::move(callback);
+}
+
 DeadlineTimer::DeadlineTimer(std::shared_ptr<TimerEvent> ctx)
   : m_timer_ctx(std::move(ctx)) {
 }
@@ -92,12 +113,28 @@ void DeadlineTimer::Reset(std::size_t delay) {
   Reset();
 }
 
+void DeadlineTimer::Reset(std::function<void()>&& callback, std::size_t delay) {
+  m_timer_ctx->SetCallback(std::move(callback));
+  Reset(delay);
+}
+
 TimerQueue::TimerQueue()
   : m_abort(false), m_idle(false) {
 }
 
 TimerQueue::~TimerQueue() {
   Shutdown();
+}
+
+std::shared_ptr<DeadlineTimer> TimerQueue::CreateTimer(
+    std::size_t delay,
+    std::shared_ptr<AsyncExecutor> executor,
+    std::function<void()>&& callback) {
+  auto ctx = std::make_shared<TimerCallbackEvent>(
+      delay, executor, shared_from_this(), std::move(callback));
+  auto new_timer = std::make_shared<DeadlineTimer>(ctx);
+
+  return new_timer;
 }
 
 void TimerQueue::AddTimer(std::shared_ptr<TimerEvent> timer) {

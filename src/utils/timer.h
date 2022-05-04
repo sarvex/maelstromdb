@@ -32,7 +32,7 @@ public:
 
   virtual void Execute();
 
-  virtual void SetCallback(std::function<void()> func);
+  virtual void SetCallback(std::function<void()>&& func);
 
   time_point Deadline() const;
   void SetDeadline(std::size_t delay); 
@@ -60,19 +60,17 @@ protected:
   std::size_t m_delay;
 };
 
-template <typename TCallable, typename... TArgs>
 class TimerCallbackEvent : public TimerEvent {
 public:
   TimerCallbackEvent(
       std::size_t delay,
       std::shared_ptr<AsyncExecutor> executor,
       std::shared_ptr<TimerQueue> timer_queue,
-      TCallable&& callback,
-      TArgs&&... args);
+      std::function<void()>&& callback);
 
   void Execute() override;
 
-  void SetCallback(std::function<void()> func) override;
+  void SetCallback(std::function<void()>&& callback) override;
 
 private:
   std::function<void()> m_callback;
@@ -87,18 +85,13 @@ public:
 
   void Reset();
   void Reset(std::size_t delay);
-  template <typename TCallable, typename... TArgs>
-  void Reset(TCallable&& callback, TArgs&&... args, std::size_t delay);
-
-private:
-  template <typename TCallable, typename... TArgs>
-  std::function<void()> PackageCallback(TCallable&& callback, TArgs&&... args);
+  void Reset(std::function<void()>&& callback, std::size_t delay);
 
 private:
   std::shared_ptr<TimerEvent> m_timer_ctx;
 };
 
-class TimerQueue {
+class TimerQueue : std::enable_shared_from_this<TimerQueue> {
 public:
   using timer_set = std::multiset<std::shared_ptr<TimerEvent>>;
 public:
@@ -106,12 +99,10 @@ public:
 
   ~TimerQueue();
 
-  template <typename TCallable, typename... TArgs>
   std::shared_ptr<DeadlineTimer> CreateTimer(
       std::size_t delay,
       std::shared_ptr<AsyncExecutor> executor,
-      TCallable&& callback,
-      TArgs&&... args);
+      std::function<void()>&& callback);
 
   void AddTimer(std::shared_ptr<TimerEvent> timer);
 
@@ -137,75 +128,6 @@ private:
   std::thread m_worker;
   bool m_idle;
 };
-
-template <typename TCallable, typename... TArgs>
-TimerCallbackEvent<TCallable, TArgs...>::TimerCallbackEvent(
-    std::size_t delay,
-    std::shared_ptr<AsyncExecutor> executor,
-    std::shared_ptr<TimerQueue> timer_queue,
-    TCallable&& callback,
-    TArgs&&... args)
-  : TimerEvent(delay, std::move(executor), std::move(timer_queue)) {
-  using CallbackReturnType = typename std::result_of<TCallable(TArgs...)>::type;
-
-  auto task = std::make_shared<std::packaged_task<CallbackReturnType()>>(
-      std::bind(std::forward(callback), std::forward(args)...));
-
-  m_callback = [this, task = std::move(task)]() {
-    (*task)();
-  };
-}
-
-template <typename TCallable, typename... TArgs>
-void TimerCallbackEvent<TCallable, TArgs...>::Execute() {
-  if (Cancelled()) {
-    return;
-  }
-
-  m_executor->Enqueue(m_callback);
-}
-
-template <typename TCallable, typename... TArgs>
-void TimerCallbackEvent<TCallable, TArgs...>::SetCallback(std::function<void()> func) {
-  m_callback = func;
-}
-
-template <typename TCallable, typename... TArgs>
-void DeadlineTimer::Reset(TCallable&& callback, TArgs&&... args, std::size_t delay) {
-  auto new_callback = PackageCallback(callback, args...);
-
-  m_timer_ctx->SetCallback(new_callback);
-  m_timer_ctx->SetDelay(delay);
-  Reset();
-}
-
-template <typename TCallable, typename... TArgs>
-std::function<void()> DeadlineTimer::PackageCallback(TCallable&& callback, TArgs&&... args) {
-  using CallbackReturnType = typename std::result_of<TCallable(TArgs...)>::type;
-
-  auto task = std::make_shared<std::packaged_task<CallbackReturnType()>>(
-      std::bind(std::forward(callback), std::forward(args)...));
-  auto packaged_callback = [this, task = std::move(task)]() {
-    (*task)();
-  };
-
-  return packaged_callback;
-}
-
-template <typename TCallable, typename... TArgs>
-std::shared_ptr<DeadlineTimer> TimerQueue::CreateTimer(
-    std::size_t delay,
-    std::shared_ptr<AsyncExecutor> executor,
-    TCallable&& callback,
-    TArgs&&... args) {
-  auto ctx = std::make_shared<TimerCallbackEvent<TCallable, TArgs...>>(
-      delay, executor, callback, args...);
-  auto new_timer = std::make_shared<DeadlineTimer>(ctx);
-
-  AddTimer(new_timer);
-
-  return new_timer;
-}
 
 }
 
