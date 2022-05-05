@@ -21,8 +21,8 @@ public:
   struct EnumHasher { template <typename T> std::size_t operator()(T t) const { return static_cast<std::size_t>(t); } };
   const std::unordered_map<LogLevel, std::string, EnumHasher> colored
   {
-    {LogLevel::ERROR, " \x1b[31;1m[ERROR]\x1b[0m "}, {LogLevel::WARN, " \x1b[33;1m[WARN]\x1b[0m "},
-      {LogLevel::INFO, " \x1b[32;1m[INFO]\x1b[0m "}, {LogLevel::DEBUG, " \x1b[34;1m[DEBUG]\x1b[0m "}
+    {LogLevel::ERROR, " \x1b[31;1m[ERROR]\x1b[0m "}, {LogLevel::WARN, " \x1b[33;1m[WARN]\x1b[0m  "},
+      {LogLevel::INFO, " \x1b[32;1m[INFO]\x1b[0m  "}, {LogLevel::DEBUG, " \x1b[34;1m[DEBUG]\x1b[0m "}
   };
 
   static void SetLevel(LogLevel new_level);

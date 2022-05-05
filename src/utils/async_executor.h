@@ -20,7 +20,7 @@ public:
 
   virtual ~AsyncExecutor();
 
-  virtual void Enqueue(callback_t&& callback);
+  virtual void Enqueue(const callback_t callback);
 
   virtual void Shutdown();
 
@@ -42,7 +42,7 @@ public:
 
   ~Strand();
 
-  void Enqueue(callback_t&& callback) override;
+  void Enqueue(const callback_t callback) override;
 
   void Shutdown() override;
 

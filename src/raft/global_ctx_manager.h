@@ -14,7 +14,7 @@ class RaftClient;
 class RaftServer;
 class Snapshot;
 
-class GlobalCtxManager : std::enable_shared_from_this<GlobalCtxManager> {
+class GlobalCtxManager {
 public:
   GlobalCtxManager(
       const std::string& address,
@@ -23,10 +23,10 @@ public:
 public:
   std::string address;
   std::vector<std::string> peer_ids;
-  ConcensusModule& concensus;
-  RaftClient& client;
-  RaftServer& server;
-  Snapshot& log;
+  std::shared_ptr<ConcensusModule> concensus;
+  std::shared_ptr<RaftClient> client;
+  std::shared_ptr<RaftServer> server;
+  std::shared_ptr<Snapshot> log;
   std::shared_ptr<AsyncExecutor> executor;
   std::shared_ptr<timer::TimerQueue> timer_queue;
 };

@@ -5,7 +5,6 @@ namespace raft {
 
 RaftServer::RaftServer(GlobalCtxManager& ctx)
   : m_ctx(ctx) {
-  ServerInit(m_ctx.address);
 }
 
 RaftServer::~RaftServer() {
@@ -14,15 +13,15 @@ RaftServer::~RaftServer() {
   }
 }
 
-void RaftServer::ServerInit(const std::string& address) {
+void RaftServer::ServerInit() {
   grpc::EnableDefaultHealthCheckService(true);
   grpc::reflection::InitProtoReflectionServerBuilderPlugin();
   grpc::ServerBuilder builder;
 
-  builder.AddListeningPort(address, grpc::InsecureServerCredentials());
+  builder.AddListeningPort(m_ctx.address, grpc::InsecureServerCredentials());
   builder.RegisterService(&m_service);
   m_server = std::move(builder.BuildAndStart());
-  Logger::Info("Server listening on", address);
+  Logger::Info("Server listening on", m_ctx.address);
 
   m_server->Wait();
 }

@@ -7,7 +7,7 @@ AsyncExecutor::AsyncExecutor()
 AsyncExecutor::~AsyncExecutor() {
 }
 
-void AsyncExecutor::Enqueue(callback_t&& callback) {
+void AsyncExecutor::Enqueue(callback_t callback) {
 }
 
 void AsyncExecutor::Shutdown() {
@@ -30,22 +30,17 @@ Strand::~Strand() {
   Shutdown();
 }
 
-void Strand::Enqueue(callback_t&& callback) {
+void Strand::Enqueue(callback_t callback) {
   std::unique_lock<std::mutex> lock(m_lock);
   if (m_abort) {
     Logger::Error("Unable to execute callback, executor process has been aborted");
     throw std::runtime_error("Executor process has been aborted");
   }
 
-  auto prev_thread = UpdateWorkerThread(lock);
   m_request_queue.push(std::move(callback));
   lock.unlock();
 
   m_cond.notify_one();
-
-  if (prev_thread.joinable()) {
-    prev_thread.join();
-  }
 }
 
 void Strand::Shutdown() {
@@ -75,14 +70,9 @@ void Strand::EventLoop() {
   while (true) {
     std::unique_lock<std::mutex> lock(m_lock);
     if (m_request_queue.empty()) {
-      auto result = m_cond.wait_for(lock, std::chrono::seconds(5), [this] {
+      m_cond.wait(lock, [this] {
         return !m_request_queue.empty() || m_abort.load();
       });
-
-      if (!result) {
-        m_idle = true;
-        return;
-      }
     }
 
     if (m_abort.load()) {
@@ -107,21 +97,5 @@ void Strand::ProcessEvents() {
 
     callback();
   }
-}
-
-std::thread Strand::UpdateWorkerThread(std::unique_lock<std::mutex>& lock) {
-  assert(lock.owns_lock());
-  if (!m_idle) {
-    return {};
-  }
-
-  auto prev_thread = std::move(m_worker);
-
-  m_worker = std::thread([this] {
-    EventLoop();
-  });
-  m_idle = false;
-
-  return prev_thread;
 }
 

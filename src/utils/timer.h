@@ -91,7 +91,7 @@ private:
   std::shared_ptr<TimerEvent> m_timer_ctx;
 };
 
-class TimerQueue : std::enable_shared_from_this<TimerQueue> {
+class TimerQueue : public std::enable_shared_from_this<TimerQueue> {
 public:
   using timer_set = std::multiset<std::shared_ptr<TimerEvent>>;
 public:

@@ -18,6 +18,8 @@ class ConcensusModule {
 public:
   ConcensusModule(GlobalCtxManager& ctx);
 
+  void StateMachineInit();
+
   enum class RaftState {
     LEADER,
     CANDIDATE,
@@ -44,7 +46,6 @@ private:
   GlobalCtxManager& m_ctx;
   std::shared_ptr<timer::DeadlineTimer> m_election_timer;
   std::shared_ptr<timer::DeadlineTimer> m_heartbeat_timer;
-  std::shared_ptr<AsyncExecutor> m_executor;
   std::string m_vote;
   std::size_t m_votes_received;
   std::size_t m_term;

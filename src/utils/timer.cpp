@@ -80,7 +80,7 @@ void TimerCallbackEvent::Execute() {
     return;
   }
 
-  m_executor->Enqueue(std::move(m_callback));
+  m_executor->Enqueue(m_callback);
 }
 
 void TimerCallbackEvent::SetCallback(std::function<void()>&& callback) {
@@ -119,7 +119,7 @@ void DeadlineTimer::Reset(std::function<void()>&& callback, std::size_t delay) {
 }
 
 TimerQueue::TimerQueue()
-  : m_abort(false), m_idle(false) {
+  : m_abort(false), m_idle(true) {
 }
 
 TimerQueue::~TimerQueue() {
@@ -131,7 +131,7 @@ std::shared_ptr<DeadlineTimer> TimerQueue::CreateTimer(
     std::shared_ptr<AsyncExecutor> executor,
     std::function<void()>&& callback) {
   auto ctx = std::make_shared<TimerCallbackEvent>(
-      delay, executor, shared_from_this(), std::move(callback));
+      delay, std::move(executor), shared_from_this(), std::move(callback));
   auto new_timer = std::make_shared<DeadlineTimer>(ctx);
 
   return new_timer;
@@ -192,7 +192,7 @@ void TimerQueue::EventLoop() {
 
   while (true) {
     std::unique_lock<std::mutex> lock(m_lock);
-    if (m_request_queue.empty()) {
+    if (m_process_queue.empty()) {
       auto result = m_cond.wait_for(lock, std::chrono::seconds(5), [this] {
         return !m_request_queue.empty() || m_abort.load();
       });
@@ -211,7 +211,7 @@ void TimerQueue::EventLoop() {
       return;
     }
 
-    m_process_queue = std::move(m_request_queue);
+    m_process_queue.merge(std::move(m_request_queue));
     lock.unlock();
 
     next_deadline = ProcessTimers();

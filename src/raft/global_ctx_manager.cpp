@@ -10,7 +10,15 @@ GlobalCtxManager::GlobalCtxManager(
     const std::string& address,
     const std::vector<std::string>& peer_ids)
   : address(address)
-  , peer_ids(peer_ids) {
+  , peer_ids(peer_ids)
+  , concensus(std::make_shared<ConcensusModule>(*this))
+  , client(std::make_shared<RaftClient>(*this))
+  , server(std::make_shared<RaftServer>(*this))
+  , log(std::make_shared<Snapshot>(*this))
+  , executor(std::make_shared<Strand>())
+  , timer_queue(std::make_shared<timer::TimerQueue>()) {
+  concensus->StateMachineInit();
+  server->ServerInit();
 }
 
 }

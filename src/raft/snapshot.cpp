@@ -1,6 +1,11 @@
+#include "global_ctx_manager.h"
 #include "snapshot.h"
 
-namespace {
+namespace raft {
+
+Snapshot::Snapshot(GlobalCtxManager& ctx)
+  : m_ctx(ctx) {
+}
 
 }
 

@@ -6,20 +6,23 @@ namespace raft {
 
 ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   : m_ctx(ctx)
-  , m_executor(std::make_shared<Strand>())
   , m_vote("")
   , m_votes_received(0)
   , m_term(0)
   , m_state(RaftState::CANDIDATE) {
+}
+
+void ConcensusModule::StateMachineInit() {
   m_election_timer = m_ctx.timer_queue->CreateTimer(
     150,
-    m_executor,
+    m_ctx.executor,
     std::bind(&ConcensusModule::ElectionCallback, this, m_term));
   m_heartbeat_timer = m_ctx.timer_queue->CreateTimer(
     50,
-    m_executor,
+    m_ctx.executor,
     std::bind(&ConcensusModule::HeartbeatCallback, this));
 
+  Logger::Debug("Starting election");
   ScheduleElection(m_term);
 }
 
@@ -45,7 +48,7 @@ void ConcensusModule::ElectionCallback(const std::size_t term) {
   for (auto peer_id:m_ctx.peer_ids) {
     Logger::Debug("Sending RequestVote rpc to", peer_id);
 
-    m_ctx.client.RequestVote(
+    m_ctx.client->RequestVote(
         peer_id,
         saved_term,
         last_log_index,
@@ -69,7 +72,7 @@ void ConcensusModule::HeartbeatCallback() {
   for (auto peer_id:m_ctx.peer_ids) {
     Logger::Debug("Sending AppendEntries rpc to", peer_id);
 
-    m_ctx.client.AppendEntries(
+    m_ctx.client->AppendEntries(
         peer_id,
         saved_term,
         prev_log_index,

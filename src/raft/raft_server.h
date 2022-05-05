@@ -18,7 +18,7 @@ public:
   RaftServer(GlobalCtxManager& ctx);
   ~RaftServer();
 
-  void ServerInit(const std::string& address);
+  void ServerInit();
 
   void RequestVote(
       grpc::CallbackServerContext* request_ctx,
