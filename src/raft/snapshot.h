@@ -5,6 +5,7 @@ namespace raft {
 
 class GlobalCtxManager;
 
+// TODO: Implement Raft log with automatic compaction
 class Snapshot {
 public:
   Snapshot(GlobalCtxManager& ctx);

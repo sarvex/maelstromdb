@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -16,16 +17,25 @@ class GlobalCtxManager;
 
 class ConcensusModule {
 public:
-  ConcensusModule(GlobalCtxManager& ctx);
-
-  void StateMachineInit();
-
   enum class RaftState {
     LEADER,
     CANDIDATE,
     FOLLOWER,
     DEAD
   };
+
+public:
+  ConcensusModule(GlobalCtxManager& ctx);
+
+  void StateMachineInit(std::size_t delay = 0);
+
+  std::size_t Term() const;
+
+  RaftState State() const;
+
+  void ResetToFollower(const std::size_t term);
+
+  void PromoteToLeader();
 
 private:
   void ElectionCallback(const std::size_t term);
@@ -38,18 +48,15 @@ private:
 
   void Shutdown();
 
-  void ResetToFollower(const std::size_t term);
-
-  void PromoteToLeader();
-
 private:
   GlobalCtxManager& m_ctx;
-  std::shared_ptr<timer::DeadlineTimer> m_election_timer;
-  std::shared_ptr<timer::DeadlineTimer> m_heartbeat_timer;
+  std::mutex m_mutex;
+  std::shared_ptr<core::DeadlineTimer> m_election_timer;
+  std::shared_ptr<core::DeadlineTimer> m_heartbeat_timer;
   std::string m_vote;
   std::size_t m_votes_received;
-  std::size_t m_term;
-  RaftState m_state;
+  std::atomic<std::size_t> m_term;
+  std::atomic<RaftState> m_state;
 };
 
 }

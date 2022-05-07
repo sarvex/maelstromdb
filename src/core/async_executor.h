@@ -12,6 +12,8 @@
 
 #include "logger.h"
 
+namespace core {
+
 class AsyncExecutor {
 public:
   using callback_t = std::function<void()>;
@@ -59,8 +61,11 @@ private:
   std::thread m_worker;
 };
 
+// TODO: Design thread pool
 class PoolExecutor : public AsyncExecutor {
 };
+
+}
 
 #endif
 

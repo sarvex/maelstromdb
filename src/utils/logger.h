@@ -82,7 +82,7 @@ void Logger::Error(Args... args) {
 template <typename... Args>
 void Logger::Log(LogLevel level, Args... args) {
   if (level >= m_level) {
-    std::lock_guard<std::mutex> lock(m_Log_mutex);
+    std::scoped_lock<std::mutex> lock(m_Log_mutex);
     auto now = Timestamp();
     auto color = colored.find(level);
     if (color == colored.end()) {

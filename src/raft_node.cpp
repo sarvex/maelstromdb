@@ -8,13 +8,13 @@ int main(int argc, char* argv[]) {
   Logger::SetLevel(Logger::LogLevel::DEBUG);
   Logger::Info("Initializing...");
 
-  std::string address = argv[1];
+  std::string address(argv[1]);
   std::vector<std::string> peer_ids{};
   for (int i = 2; i < argc; i++) {
     peer_ids.push_back(argv[i]);
   }
 
-  raft::GlobalCtxManager ctx(address, peer_ids);
+  raft::GlobalCtxManager ctx(address, peer_ids, 0);
 
   Logger::Info("Node terminated");
   return 0;

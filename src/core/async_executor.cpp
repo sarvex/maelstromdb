@@ -1,5 +1,7 @@
 #include "async_executor.h"
 
+namespace core {
+
 AsyncExecutor::AsyncExecutor() 
   : m_abort(false) {
 }
@@ -97,5 +99,7 @@ void Strand::ProcessEvents() {
 
     callback();
   }
+}
+
 }
 

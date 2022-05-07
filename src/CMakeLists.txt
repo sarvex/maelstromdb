@@ -35,8 +35,8 @@ add_executable(maelstromdb
   raft/raft_client.cpp
   raft/raft_server.cpp
   raft/snapshot.cpp
-  utils/async_executor.cpp
-  utils/timer.cpp
+  core/async_executor.cpp
+  core/timer.cpp
   utils/logger.cpp
   raft_node.cpp)
 target_link_libraries(maelstromdb
