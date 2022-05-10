@@ -20,6 +20,9 @@ public:
   AsyncServer(GlobalCtxManager& ctx);
   virtual ~AsyncServer();
 
+  AsyncServer(const AsyncServer&) = delete;
+  AsyncServer& operator=(const AsyncServer&) = delete;
+
   virtual void ServerInit() = 0;
 
   virtual void RpcEventLoop() = 0;

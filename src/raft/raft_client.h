@@ -8,6 +8,7 @@
 #include <mutex>
 #include <unordered_map>
 
+#include "concensus_module.h"
 #include "logger.h"
 #include "raft.grpc.pb.h"
 
@@ -31,6 +32,9 @@ public:
 
 public:
   RaftClient(GlobalCtxManager& ctx);
+
+  RaftClient(const RaftClient&) = delete;
+  RaftClient& operator=(const RaftClient&) = delete;
 
   void ClientInit();
 

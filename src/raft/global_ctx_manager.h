@@ -1,6 +1,7 @@
 #ifndef GLOBAL_CTX_MANAGER_H
 #define GLOBAL_CTX_MANAGER_H
 
+#include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
@@ -13,7 +14,7 @@ namespace raft {
 class ConcensusModule;
 class RaftClient;
 class RaftServer;
-class Snapshot;
+class Log;
 
 class GlobalCtxManager {
 public:
@@ -25,7 +26,7 @@ public:
   std::shared_ptr<ConcensusModule> ConcensusInstance() const;
   std::shared_ptr<RaftClient> ClientInstance() const;
   std::shared_ptr<RaftServer> ServerInstance() const;
-  std::shared_ptr<Snapshot> LogInstance() const;
+  std::shared_ptr<Log> LogInstance() const;
   std::shared_ptr<core::AsyncExecutor> ExecutorInstance() const;
   std::shared_ptr<core::TimerQueue> TimerQueueInstance() const;
 
@@ -33,7 +34,7 @@ private:
   std::shared_ptr<ConcensusModule> m_concensus;
   std::shared_ptr<RaftClient> m_client;
   std::shared_ptr<RaftServer> m_server;
-  std::shared_ptr<Snapshot> m_log;
+  std::shared_ptr<Log> m_log;
   std::shared_ptr<core::AsyncExecutor> m_executor;
   std::shared_ptr<core::TimerQueue> m_timer_queue;
 

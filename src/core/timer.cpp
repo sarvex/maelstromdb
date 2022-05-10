@@ -16,12 +16,6 @@ TimerEvent::TimerEvent(
 TimerEvent::~TimerEvent() {
 }
 
-void TimerEvent::Execute() {
-}
-
-void TimerEvent::SetCallback(std::function<void()>&& func) {
-}
-
 TimerEvent::time_point TimerEvent::Deadline() const {
   return m_deadline;
 }

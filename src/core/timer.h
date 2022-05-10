@@ -30,9 +30,9 @@ public:
 
   virtual ~TimerEvent();
 
-  virtual void Execute();
+  virtual void Execute() = 0;
 
-  virtual void SetCallback(std::function<void()>&& func);
+  virtual void SetCallback(std::function<void()>&& func) = 0;
 
   time_point Deadline() const;
   void SetDeadline(std::size_t delay); 

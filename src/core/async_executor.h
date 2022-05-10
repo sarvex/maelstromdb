@@ -22,14 +22,14 @@ public:
 
   virtual ~AsyncExecutor();
 
-  virtual void Enqueue(const callback_t callback);
+  virtual void Enqueue(const callback_t callback) = 0;
 
-  virtual void Shutdown();
+  virtual void Shutdown() = 0;
 
 protected:
-  virtual void EventLoop();
+  virtual void EventLoop() = 0;
 
-  virtual void ProcessEvents(); 
+  virtual void ProcessEvents() = 0; 
 
 protected:
   std::mutex m_lock;

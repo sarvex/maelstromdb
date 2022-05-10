@@ -34,7 +34,7 @@ add_executable(maelstromdb
   raft/global_ctx_manager.cpp
   raft/raft_client.cpp
   raft/raft_server.cpp
-  raft/snapshot.cpp
+  raft/storage.cpp
   core/async_executor.cpp
   core/timer.cpp
   utils/logger.cpp

@@ -3,12 +3,12 @@ syntax = "proto3";
 package protocol.log;
 
 message LogEntry {
-  uint32 term = 1;
+  int64 term = 1;
   bytes data = 2;
 }
 
 message LogMetadata {
-  uint32 term = 1;
-  uint32 vote = 2;
+  int64 term = 1;
+  string vote = 2;
 }
 

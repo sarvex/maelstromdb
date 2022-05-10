@@ -7,40 +7,58 @@ import "log.proto";
 enum OpCode {
   REQUEST_VOTE = 0;
   APPEND_ENTRIES = 1;
+  INSTALL_SNAPSHOT = 2;
 }
 
 message RequestVote {
   message Request {
-    uint32 term = 1;
+    int64 term = 1;
     string candidateId = 2;
-    uint32 lastLogIndex = 3;
-    uint32 lastLogTerm = 4;
+    int64 lastLogIndex = 3;
+    int64 lastLogTerm = 4;
   }
 
   message Response {
-    uint32 term = 1;
+    int64 term = 1;
     bool voteGranted = 2;
   }
 }
 
 message AppendEntries {
   message Request {
-    uint32 term = 1;
+    int64 term = 1;
     string leaderId = 2;
-    uint32 prevLogIndex = 3;
-    uint32 prevLogTerm = 4;
+    int64 prevLogIndex = 3;
+    int64 prevLogTerm = 4;
     repeated log.LogEntry entries = 5;
-    uint32 leaderCommit = 6;
+    int64 leaderCommit = 6;
   }
 
   message Response {
-    uint32 term = 1;
+    int64 term = 1;
     bool success = 2;
+  }
+}
+
+message InstallSnapshot {
+  message Request {
+    int64 term = 1;
+    string leaderId = 2;
+    int64 lastIncludedIndex = 3;
+    int64 lastIncludedTerm = 4;
+    int64 offset = 5;
+    repeated bytes data = 6;
+    bool done = 7;
+  }
+
+  message Response {
+    int64 term = 1;
   }
 }
 
 service RaftService {
   rpc RequestVote (RequestVote.Request) returns (RequestVote.Response) {}
   rpc AppendEntries (AppendEntries.Request) returns (AppendEntries.Response) {}
+  rpc InstallSnapshot (InstallSnapshot.Request) returns (InstallSnapshot.Response) {}
 }
 

@@ -2,7 +2,7 @@
 #include "concensus_module.h"
 #include "raft_client.h"
 #include "raft_server.h"
-#include "snapshot.h"
+#include "storage.h"
 
 namespace raft {
 
@@ -15,7 +15,7 @@ GlobalCtxManager::GlobalCtxManager(
   , m_concensus(std::make_shared<ConcensusModule>(*this))
   , m_client(std::make_shared<RaftClient>(*this))
   , m_server(std::make_shared<RaftServer>(*this))
-  , m_log(std::make_shared<Snapshot>(*this))
+  , m_log(std::make_shared<PersistedLog>(*this, std::filesystem::current_path().string() + "/raft/" + address + "/"))
   , m_executor(std::make_shared<core::Strand>())
   , m_timer_queue(std::make_shared<core::TimerQueue>()) {
   m_concensus->StateMachineInit(delay);
@@ -42,7 +42,7 @@ std::shared_ptr<RaftServer> GlobalCtxManager::ServerInstance() const {
   return m_server;
 }
 
-std::shared_ptr<Snapshot> GlobalCtxManager::LogInstance() const {
+std::shared_ptr<Log> GlobalCtxManager::LogInstance() const {
   return m_log;
 }
 

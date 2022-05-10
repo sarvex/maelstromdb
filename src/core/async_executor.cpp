@@ -9,18 +9,6 @@ AsyncExecutor::AsyncExecutor()
 AsyncExecutor::~AsyncExecutor() {
 }
 
-void AsyncExecutor::Enqueue(callback_t callback) {
-}
-
-void AsyncExecutor::Shutdown() {
-}
-
-void AsyncExecutor::EventLoop() {
-}
-
-void AsyncExecutor::ProcessEvents() {
-}
-
 Strand::Strand()
   : AsyncExecutor(), m_idle(false) {
   m_worker = std::thread([this] {

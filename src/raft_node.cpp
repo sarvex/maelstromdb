@@ -14,7 +14,7 @@ int main(int argc, char* argv[]) {
     peer_ids.push_back(argv[i]);
   }
 
-  raft::GlobalCtxManager ctx(address, peer_ids, 0);
+  raft::GlobalCtxManager ctx(address, peer_ids, 2);
 
   Logger::Info("Node terminated");
   return 0;

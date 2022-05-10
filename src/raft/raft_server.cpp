@@ -75,7 +75,6 @@ RaftServer::RequestVoteData::RequestVoteData(
 void RaftServer::RequestVoteData::Proceed() {
   switch (m_status) {
     case CallStatus::CREATE: {
-      Logger::Debug("Creating RequestVote reply...");
       m_status = CallStatus::PROCESS;
       m_service->RequestRequestVote(
           &m_server_ctx,
@@ -90,19 +89,10 @@ void RaftServer::RequestVoteData::Proceed() {
       Logger::Debug("Processing RequestVote reply...");
       new RequestVoteData(m_ctx, m_service, m_scq);
 
-      if (m_ctx.ConcensusInstance()->State() == ConcensusModule::RaftState::DEAD) {
-        m_status = CallStatus::FINISH;
-        m_responder.Finish(m_response, grpc::Status::CANCELLED, (void*)&m_tag);
-        break;
-      }
-
-      if (m_request.term() > m_ctx.ConcensusInstance()->Term()) {
-        Logger::Debug("Term out of date in RequestVote RPC, changed from", m_ctx.ConcensusInstance()->Term(), "to", m_request.term());
-        m_ctx.ConcensusInstance()->ResetToFollower(m_request.term());
-      }
+      auto [m_response, s] = m_ctx.ConcensusInstance()->ProcessRequestVoteClientRequest(m_request);
 
       m_status = CallStatus::FINISH;
-      m_responder.Finish(m_response, grpc::Status::OK, (void*)&m_tag);
+      m_responder.Finish(m_response, s, (void*)&m_tag);
 
       break;
     }
@@ -125,7 +115,6 @@ RaftServer::AppendEntriesData::AppendEntriesData(
 void RaftServer::AppendEntriesData::Proceed() {
   switch (m_status) {
     case CallStatus::CREATE: {
-      Logger::Debug("Creating AppendEntries reply...");
       m_status = CallStatus::PROCESS;
       m_service->RequestAppendEntries(
           &m_server_ctx,
@@ -140,19 +129,10 @@ void RaftServer::AppendEntriesData::Proceed() {
       Logger::Debug("Processing AppendEntries reply...");
       new AppendEntriesData(m_ctx, m_service, m_scq);
 
-      if (m_ctx.ConcensusInstance()->State() == ConcensusModule::RaftState::DEAD) {
-        m_status = CallStatus::FINISH;
-        m_responder.Finish(m_response, grpc::Status::CANCELLED, (void*)&m_tag);
-        break;
-      }
-
-      if (m_request.term() > m_ctx.ConcensusInstance()->Term()) {
-        Logger::Debug("Term out of date in AppendEntries RPC, changed from", m_ctx.ConcensusInstance()->Term(), "to", m_request.term());
-        m_ctx.ConcensusInstance()->ResetToFollower(m_request.term());
-      }
+      auto [m_response, s] = m_ctx.ConcensusInstance()->ProcessAppendEntriesClientRequest(m_request);
 
       m_status = CallStatus::FINISH;
-      m_responder.Finish(m_response, grpc::Status::OK, (void*)&m_tag);
+      m_responder.Finish(m_response, s, (void*)&m_tag);
 
       break;
     }

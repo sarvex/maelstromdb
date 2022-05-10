@@ -62,7 +62,6 @@ void RaftClient::AppendEntries(
   tag->id = CommandID::APPEND_ENTRIES;
 
   call->response_reader->Finish(&call->reply, &call->status, (void*)tag);
-
 }
 
 void RaftClient::AsyncCompleteRPC() {
@@ -105,6 +104,8 @@ void RaftClient::HandleRequestVoteReply(AsyncClientCall<protocol::raft::RequestV
     return;
   }
 
+  m_ctx.ConcensusInstance()->ProcessRequestVoteServerResponse(call->request, call->reply);
+
   Logger::Debug("RequestVote call was received");
 }
 
@@ -114,7 +115,9 @@ void RaftClient::HandleAppendEntriesReply(AsyncClientCall<protocol::raft::Append
     Logger::Info("AppendEntries call failed unexpectedly");
     return;
   }
-  
+
+  m_ctx.ConcensusInstance()->ProcessAppendEntriesServerResponse(call->request, call->reply, call->ctx.peer().substr(5));
+
   Logger::Debug("AppendEntries call was received");
 }
 
