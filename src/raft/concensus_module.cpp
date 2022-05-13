@@ -12,7 +12,8 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_term(0)
   , m_state(RaftState::CANDIDATE)
   , m_last_applied(-1)
-  , m_commit_index(-1) {
+  , m_commit_index(-1)
+  , m_timer_executor(std::make_shared<core::Strand>()) {
 }
 
 void ConcensusModule::StateMachineInit(std::size_t delay) {
@@ -21,14 +22,20 @@ void ConcensusModule::StateMachineInit(std::size_t delay) {
     m_match_index[peer] = -1;
   }
 
+  auto [metadata, is_valid] = m_ctx.LogInstance()->RestoreState();
+  if (is_valid) {
+    m_term.store(metadata.term());
+    m_vote = metadata.vote();
+  }
+
   std::this_thread::sleep_for(std::chrono::seconds(delay));
   m_election_timer = m_ctx.TimerQueueInstance()->CreateTimer(
       150,
-      m_ctx.ExecutorInstance(),
+      m_timer_executor,
       std::bind(&ConcensusModule::ElectionCallback, this, Term()));
   m_heartbeat_timer = m_ctx.TimerQueueInstance()->CreateTimer(
       50,
-      m_ctx.ExecutorInstance(),
+      m_timer_executor,
       std::bind(&ConcensusModule::HeartbeatCallback, this));
 
   Logger::Debug("Starting election");
@@ -133,6 +140,8 @@ void ConcensusModule::ResetToFollower(const std::size_t term) {
   m_votes_received = 0;
   Logger::Debug("Reset to follower, term:", Term());
 
+  m_heartbeat_timer->Cancel();
+
   StoreState();
 
   ScheduleElection(term);
@@ -148,7 +157,7 @@ void ConcensusModule::PromoteToLeader() {
   ScheduleHeartbeat();
 }
 
-bool ConcensusModule::IsMajority(const std::size_t votes) const {
+bool ConcensusModule::CheckQuorum(const std::size_t votes) const {
   return votes*2 > m_ctx.peer_ids.size() + 1;
 }
 
@@ -207,7 +216,7 @@ void ConcensusModule::ProcessRequestVoteServerResponse(
     if (reply.votegranted()) {
       m_votes_received++;
 
-      if (IsMajority(m_votes_received)) {
+      if (CheckQuorum(m_votes_received)) {
         Logger::Debug("Wins election with", m_votes_received, "votes");
         PromoteToLeader();
         return;
@@ -299,10 +308,10 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
 
       std::size_t saved_commit_index = m_commit_index;
       std::size_t log_size = m_ctx.LogInstance()->LogSize();
-      auto log_entries = m_ctx.LogInstance()->Entries();
+      auto log_entries = m_ctx.LogInstance()->Entries(saved_commit_index + 1, log_size);
       std::size_t new_commit_index = saved_commit_index;
       for (int i = saved_commit_index + 1; i < log_size; i++) {
-        if (log_entries[i].term() == Term()) {
+        if (log_entries[i - saved_commit_index - 1].term() == Term()) {
           int match_count = 1;
           for (auto peer:m_ctx.peer_ids) {
             if (m_match_index[peer] >= i) {
@@ -310,7 +319,7 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
             }
           }
 
-          if (IsMajority(match_count)) {
+          if (CheckQuorum(match_count)) {
             new_commit_index = i;
           }
         }

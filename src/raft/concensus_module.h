@@ -12,6 +12,7 @@
 #include <utility>
 #include <vector>
 
+#include "async_executor.h"
 #include "logger.h"
 #include "raft.grpc.pb.h"
 #include "timer.h"
@@ -69,7 +70,7 @@ private:
 
   void ScheduleHeartbeat();
 
-  bool IsMajority(const std::size_t votes) const;
+  bool CheckQuorum(const std::size_t votes) const;
 
   void StoreState() const;
 
@@ -77,6 +78,7 @@ private:
 
 private:
   GlobalCtxManager& m_ctx;
+  std::shared_ptr<core::AsyncExecutor> m_timer_executor;
   std::shared_ptr<core::DeadlineTimer> m_election_timer;
   std::shared_ptr<core::DeadlineTimer> m_heartbeat_timer;
   std::string m_vote;

@@ -29,7 +29,7 @@ foreach(target raft log)
     libprotobuf)
 endforeach()
 
-add_executable(maelstromdb
+add_library(maelstromdb_lib
   raft/concensus_module.cpp
   raft/global_ctx_manager.cpp
   raft/raft_client.cpp
@@ -37,17 +37,22 @@ add_executable(maelstromdb
   raft/storage.cpp
   core/async_executor.cpp
   core/timer.cpp
-  utils/logger.cpp
-  raft_node.cpp)
-target_link_libraries(maelstromdb
+  utils/logger.cpp)
+target_link_libraries(maelstromdb_lib
   grpc_raft_proto
   grpc_log_proto)
-target_include_directories(maelstromdb
-  PRIVATE
+target_include_directories(maelstromdb_lib
+  PUBLIC
   core
   engine
   protos
   raft
   utils
   "${CMAKE_BINARY_DIR}/protogen")
+
+add_executable(maelstromdb
+  raft_node.cpp)
+target_link_libraries(maelstromdb
+  maelstromdb_lib)
+
 
