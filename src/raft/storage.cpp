@@ -13,28 +13,18 @@ Log::~Log() {
 PersistedLog::Page::Page(
     const std::size_t start,
     const std::string& dir,
+    const bool is_open,
     const std::size_t max_file_size)
-  : byte_offset(0)
-  , start_index(start)
+  : is_open(is_open)
+  , byte_offset(0)
+  , start_index(start) 
   , end_index(start)
+  , dir(dir)
   , filename("open-" + std::to_string(start))
   , log_entries({})
   , max_file_size(max_file_size) {
-  std::filesystem::create_directories(dir);
-
   std::string file_path = dir + filename;
   std::fstream out(file_path, std::ios::out | std::ios::binary);
-  // std::filesystem::resize_file(file_path, max_file_size);
-}
-
-PersistedLog::Page::Page(const Page& page)
-  : is_open(page.is_open)
-  , byte_offset(page.byte_offset)
-  , start_index(page.start_index)
-  , end_index(page.end_index)
-  , filename(page.filename)
-  , log_entries(page.log_entries)
-  , max_file_size(page.max_file_size) {
 }
 
 PersistedLog::Page::Page(const Page&& page)
@@ -42,22 +32,22 @@ PersistedLog::Page::Page(const Page&& page)
   , byte_offset(page.byte_offset)
   , start_index(page.start_index)
   , end_index(page.end_index)
+  , dir(page.dir)
   , filename(page.filename)
   , log_entries(std::move(page.log_entries))
   , max_file_size(page.max_file_size) {
 }
 
-PersistedLog::Page& PersistedLog::Page::operator=(const PersistedLog::Page&& page) {
-  if (this != &page) {
-    is_open = page.is_open;
-    byte_offset = page.byte_offset;
-    start_index = page.start_index;
-    end_index = page.end_index;
-    filename = page.filename;
-    log_entries = std::move(page.log_entries);
-  }
+PersistedLog::Page& PersistedLog::Page::operator=(const Page&& page) {
+  is_open = page.is_open;
+  byte_offset = page.byte_offset;
+  start_index = page.start_index;
+  end_index = page.end_index;
+  dir = page.dir;
+  filename = page.filename;
+  log_entries = std::move(page.log_entries);
   return *this;
-}
+} 
 
 void PersistedLog::Page::Close() {
   if (!is_open) {
@@ -65,12 +55,12 @@ void PersistedLog::Page::Close() {
   }
   is_open = false;
 
-  const std::string format = "%020lu-%020lu";
-  const auto size = std::snprintf(nullptr, 0, format.c_str(), start_index, end_index);
-  const auto buffer = std::make_unique<char[]>(size);
-  std::snprintf(buffer.get(), size, format.c_str(), start_index, end_index);
-  const std::string closed_filename = std::string(buffer.get(), buffer.get() + size - 1);
-  std::filesystem::rename(filename, closed_filename);
+  std::string close_file_format = "%020lu-%020lu";
+  auto size = std::snprintf(nullptr, 0, close_file_format.c_str(), start_index, end_index) + 1;
+  std::unique_ptr<char[]> buffer(new char[size]);
+  std::snprintf(buffer.get(), size, close_file_format.c_str(), start_index, end_index);
+  std::string closed_filename = std::string(buffer.get(), buffer.get() + size - 1);
+  std::filesystem::rename(dir + filename, dir + closed_filename);
   filename = closed_filename;
 }
 
@@ -79,14 +69,13 @@ std::size_t PersistedLog::Page::RemainingSpace() const {
 }
 
 bool PersistedLog::Page::WriteLogEntry(std::fstream& file, const protocol::log::LogEntry& new_entry) {
-    bool success = google::protobuf::util::SerializeDelimitedToOstream(new_entry, &file);
+  bool success = google::protobuf::util::SerializeDelimitedToOstream(new_entry, &file);
+  if (success) {
     byte_offset += new_entry.ByteSizeLong();
     end_index++;
-
-    if (success) {
-      log_entries.push_back(new_entry);
-    }
-    return success;
+    log_entries.push_back(new_entry);
+  }
+  return success;
 }
 
 PersistedLog::PersistedLog(
@@ -94,51 +83,41 @@ PersistedLog::PersistedLog(
     const std::size_t max_file_size)
   : Log()
   , m_dir(parent_dir)
-  , m_file_executor(std::make_shared<core::Strand>())
-  , m_open_page(0, parent_dir, max_file_size)
+  , m_max_file_size(max_file_size)
   , m_log_indices()
-  , m_max_file_size(max_file_size) {
-  m_log_indices.insert({0, &m_open_page});
+  , m_file_executor(std::make_shared<core::Strand>()) {
+  std::filesystem::create_directories(parent_dir);
+
+  RestoreState();
+  if (!m_open_page) {
+    m_open_page = std::make_shared<Page>(0, parent_dir, true, max_file_size);
+    m_log_indices.insert({0, m_open_page});
+  }
 }
 
 ssize_t PersistedLog::LastLogIndex() const {
-  return m_log_size - 1;
+  return LogSize() - 1;
 }
 
 ssize_t PersistedLog::LastLogTerm() const {
-  if (m_log_size > 0) {
+  if (LogSize() > 0) {
     return Entry(LastLogIndex()).term();
   } else {
     return -1;
   }
 }
 
-void PersistedLog::CreatePage() {
-  if (m_open_page.is_open) {
-    m_open_page.Close();
-  }
-
-  m_open_page = Page(LogSize(), m_dir, m_max_file_size);
-  m_log_indices.insert({LogSize(), &m_open_page});
-}
-
-std::vector<std::string> PersistedLog::ListDirectoryContents(const std::string& dir) {
-  std::vector<std::string> file_list;
-  for (const auto& entry:std::filesystem::directory_iterator(dir)) {
-    if (entry.is_regular_file()) {
-      file_list.push_back(entry.path().filename());
-    }
-  }
-  return file_list;
-}
-
 void PersistedLog::Append(const std::vector<protocol::log::LogEntry>& new_entries) {
   PersistLogEntries(new_entries);
 }
 
+std::tuple<protocol::log::LogMetadata, bool> PersistedLog::Metadata() const {
+  return m_metadata;
+}
+
 void PersistedLog::SetMetadata(const protocol::log::LogMetadata& metadata) {
-  const std::string& metadata_path = m_dir + "metadata";
-  m_metadata = metadata;
+  m_metadata = std::make_tuple(metadata, true);
+  std::string metadata_path = m_dir + "metadata";
   PersistMetadata(metadata_path);
 }
 
@@ -146,102 +125,111 @@ bool PersistedLog::Empty(const std::string& path) const {
   return std::filesystem::file_size(path) == 0;
 }
 
+
 protocol::log::LogEntry PersistedLog::Entry(const std::size_t idx) const {
   if (idx > LastLogIndex()) {
-    Logger::Error("Attempt to access log entry out of bounds, index =", idx, "last_log_index=", LastLogIndex());
+    Logger::Error("Raft log index out of bounds, index =", idx, "last_log_index =", LastLogIndex());
     throw std::out_of_range("Raft log index out of bounds");
   }
 
   auto it = m_log_indices.upper_bound(idx);
-  Logger::Debug(it == m_log_indices.end(), m_log_indices.size());
   it--;
-  auto& page = it->second;
-  Logger::Debug("index =", page->start_index);
+  const auto& page = it->second;
   return page->log_entries[idx - page->start_index];
 }
 
 std::vector<protocol::log::LogEntry> PersistedLog::Entries(std::size_t start, std::size_t end) const {
   if (start > end || end > LastLogIndex() + 1) {
-    Logger::Error("Invalid iterator for raft log, start =", start, "end =", end, "last_log_index =", LastLogIndex());
-    throw std::invalid_argument("Invalid iterators for raft log");
+    Logger::Error("Raft log slice query invalid, start =", start, "end =", end, "last_log_index =", LastLogIndex());
+    throw std::out_of_range("Raft log slice query invalid");
   }
 
-  std::vector<protocol::log::LogEntry> queried_entries;
-  std::size_t curr_index = start;
-  while (curr_index < end) {
-    auto it = m_log_indices.upper_bound(curr_index);
-    auto& end_index = it == m_log_indices.end() ? m_open_page.end_index : it->first;
+  std::vector<protocol::log::LogEntry> query_entries;
+  std::size_t curr = start;
+  while (curr < end) {
+    auto it = m_log_indices.upper_bound(curr);
     it--;
-    auto& page = it->second;
+    const auto& page = it->second;
 
-    if (end_index < end) {
-      queried_entries.insert(
-          queried_entries.end(),
-          page->log_entries.begin() + curr_index - m_open_page.start_index,
-          page->log_entries.end());
+    start = start >= page->start_index ? start - page->start_index : 0;
+    if (page->end_index >= end) {
+      query_entries.insert(query_entries.end(), page->log_entries.begin() + start, page->log_entries.begin() + end - page->start_index);
     } else {
-      queried_entries.insert(
-          queried_entries.end(),
-          page->log_entries.begin() + curr_index - m_open_page.start_index,
-          page->log_entries.begin() + end - page->start_index);
+      query_entries.insert(query_entries.end(), page->log_entries.begin() + start, page->log_entries.end());
     }
 
-    curr_index = end_index;
+    curr = page->end_index;
   }
 
-  return queried_entries;
+  return query_entries;
 }
 
 std::size_t PersistedLog::LogSize() const {
   return m_log_size;
 }
 
-std::tuple<protocol::log::LogMetadata, bool> PersistedLog::RestoreState() {
-  bool valid_metadata = false;
-  for (const auto& file:ListDirectoryContents(m_dir)) {
-    if (file == "metadata") {
-      std::string metadata_path = m_dir + file;
-      if (!Empty(metadata_path)) {
-        m_metadata = LoadMetadata(metadata_path);
-        valid_metadata = true;
-      }
+void PersistedLog::RestoreState() {
+  auto file_list = ListDirectoryContents(m_dir);
+  std::sort(file_list.begin(), file_list.end());
+  for (const auto& filename:file_list) {
+    std::string file_path = m_dir + filename;
+    if (filename == "metadata") {
+      LoadMetadata(file_path);
       continue;
     }
 
-    std::string log_path = m_dir + file;
-    m_open_page = LoadLogEntries(log_path);
-    m_log_size = m_open_page.log_entries.size();
-    m_log_indices.insert({m_open_page.start_index, &m_open_page});
-  }
+    auto restored_entries = LoadLogEntries(file_path);
+    if (IsFileOpen(filename)) {
+      m_open_page = std::make_shared<Page>(LogSize(), m_dir, true, m_max_file_size);
+      m_log_indices.insert({m_open_page->start_index, m_open_page});
 
-  return std::make_tuple(m_metadata, valid_metadata);
+      m_log_size += restored_entries.size();
+
+      m_open_page->end_index = m_open_page->start_index + restored_entries.size();
+      m_open_page->log_entries = std::move(restored_entries);
+    } else {
+      std::size_t dash_index = filename.find('-');
+      std::size_t start = std::stoi(filename.substr(0, dash_index));
+      auto closed_page = std::make_shared<Page>(start, m_dir, false, m_max_file_size);
+
+      m_log_size += restored_entries.size();
+      m_log_indices.insert({start, closed_page});
+
+      closed_page->end_index = closed_page->start_index + restored_entries.size();
+      closed_page->log_entries = std::move(restored_entries);
+    }
+  }
 }
 
 void PersistedLog::PersistMetadata(const std::string& metadata_path) {
   std::fstream out(metadata_path, std::ios::out | std::ios::trunc | std::ios::binary);
 
-  bool success = google::protobuf::util::SerializeDelimitedToOstream(m_metadata, &out);
+  bool success = google::protobuf::util::SerializeDelimitedToOstream(std::get<0>(m_metadata), &out);
   if (!success) {
     Logger::Error("Unexpected serialization failure when persisting raft metadata to disk");
     throw std::runtime_error("Unable to serialize raft metadata");
   }
-  Logger::Debug("Persisted raft metadata successfully, term =", m_metadata.term(), "vote =", m_metadata.vote());
   out.flush();
 }
 
 void PersistedLog::PersistLogEntries(const std::vector<protocol::log::LogEntry>& new_entries) {
-  std::string file_path = m_dir + m_open_page.filename;
-  Logger::Debug("File path was", file_path);
-  std::fstream out(file_path, std::ios::out | std::ios::app | std::ios::binary);
+  std::string log_path = m_dir + m_open_page->filename;
+  std::fstream out(log_path, std::ios::out | std::ios::app | std::ios::binary);
 
   bool success = true;
   for (auto &entry:new_entries) {
-    if (entry.ByteSizeLong() > m_open_page.RemainingSpace()) {
-      out.flush();
-      CreatePage();
+    if (entry.ByteSizeLong() > m_open_page->RemainingSpace()) {
+      m_open_page->Close();
+      out.close();
+
+      m_open_page = std::make_shared<Page>(LogSize(), m_dir, true, m_max_file_size);
+      m_log_indices.insert({m_open_page->start_index, m_open_page});
+
+      log_path = m_dir + m_open_page->filename;
+      out.open(log_path, std::ios::out | std::ios::app | std::ios::binary);
     }
 
-    success = m_open_page.WriteLogEntry(out, entry);
+    success = m_open_page->WriteLogEntry(out, entry);
     if (!success) {
       Logger::Error("Unexpected serialization failure when persisting raft log to disk");
       throw std::runtime_error("Unable to serialize raft log");
@@ -249,42 +237,55 @@ void PersistedLog::PersistLogEntries(const std::vector<protocol::log::LogEntry>&
 
     m_log_size++;
   }
-  Logger::Debug("Persisted raft log entries successfully");
   out.flush();
 }
+
+std::vector<protocol::log::LogEntry> PersistedLog::LoadLogEntries(const std::string& log_path) const {
+  std::fstream in(log_path, std::ios::in | std::ios::binary);
+
+  google::protobuf::io::IstreamInputStream log_stream(&in);
+  std::vector<protocol::log::LogEntry> log_entries;
+  protocol::log::LogEntry temp_log_entry;
+
+  while (google::protobuf::util::ParseDelimitedFromZeroCopyStream(&temp_log_entry, &log_stream, nullptr)) {
+    log_entries.push_back(temp_log_entry);
+  }
+
+  Logger::Debug("Restored log entries from disk, size =", log_entries.size());
+
+  return log_entries;
+}
+
+std::vector<std::string> PersistedLog::ListDirectoryContents(const std::string& dir) {
+  std::vector<std::string> file_list;
+  for (const auto& entry:std::filesystem::directory_iterator(dir)) {
+    if (std::filesystem::is_regular_file(entry)) {
+      file_list.push_back(entry.path().filename());
+    }
+  }
+  return file_list;
+}
+
 
 protocol::log::LogMetadata PersistedLog::LoadMetadata(const std::string& metadata_path) const {
   std::fstream in(metadata_path, std::ios::in | std::ios::binary);
 
   google::protobuf::io::IstreamInputStream metadata_stream(&in);
   protocol::log::LogMetadata metadata;
-  bool success = google::protobuf::util::ParseDelimitedFromZeroCopyStream(&metadata, &metadata_stream, nullptr);
 
+  bool success = google::protobuf::util::ParseDelimitedFromZeroCopyStream(&metadata, &metadata_stream, nullptr);
   if (!success) {
     Logger::Error("Unable to restore metadata from disk");
     throw std::runtime_error("Unable to restore metadata");
   }
+
   Logger::Debug("Restored metadata from disk, term =", metadata.term(), "vote =", metadata.vote());
 
   return metadata;
 }
 
-PersistedLog::Page PersistedLog::LoadLogEntries(const std::string& log_path) const {
-  std::fstream in(log_path, std::ios::in | std::ios::binary);
-  google::protobuf::io::IstreamInputStream log_stream(&in);
-  std::vector<protocol::log::LogEntry> log_entries;
-  protocol::log::LogEntry temp_log_entry;
-  
-  while (google::protobuf::util::ParseDelimitedFromZeroCopyStream(&temp_log_entry, &log_stream, nullptr)) {
-    log_entries.push_back(temp_log_entry);
-    Logger::Debug("READING:", temp_log_entry.term(), temp_log_entry.data());
-  }
-
-  Logger::Debug("Restored log entries from disk, log_path =", log_path, "size =", log_entries.size());
-
-  auto loaded_page = Page(LogSize(), m_dir, m_max_file_size);
-  loaded_page.log_entries = std::move(log_entries);
-  return loaded_page;
+bool PersistedLog::IsFileOpen(const std::string& filename) const {
+  return filename.substr(0, 4) == "open";
 }
 
 }

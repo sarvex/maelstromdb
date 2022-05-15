@@ -84,5 +84,8 @@ endif()
 set(_PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
 set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
 
+enable_testing()
+
 add_subdirectory(src)
+add_subdirectory(tests)
 

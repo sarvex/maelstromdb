@@ -22,7 +22,7 @@ void ConcensusModule::StateMachineInit(std::size_t delay) {
     m_match_index[peer] = -1;
   }
 
-  auto [metadata, is_valid] = m_ctx.LogInstance()->RestoreState();
+  auto [metadata, is_valid] = m_ctx.LogInstance()->Metadata();
   if (is_valid) {
     m_term.store(metadata.term());
     m_vote = metadata.vote();
