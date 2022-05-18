@@ -95,6 +95,20 @@ PersistedLog::PersistedLog(
   }
 }
 
+std::tuple<protocol::log::LogMetadata, bool> PersistedLog::Metadata() const {
+  return m_metadata;
+}
+
+void PersistedLog::SetMetadata(const protocol::log::LogMetadata& metadata) {
+  m_metadata = std::make_tuple(metadata, true);
+  std::string metadata_path = m_dir + "metadata";
+  PersistMetadata(metadata_path);
+}
+
+std::size_t PersistedLog::LogSize() const {
+  return m_log_size;
+}
+
 ssize_t PersistedLog::LastLogIndex() const {
   return LogSize() - 1;
 }
@@ -106,25 +120,6 @@ ssize_t PersistedLog::LastLogTerm() const {
     return -1;
   }
 }
-
-void PersistedLog::Append(const std::vector<protocol::log::LogEntry>& new_entries) {
-  PersistLogEntries(new_entries);
-}
-
-std::tuple<protocol::log::LogMetadata, bool> PersistedLog::Metadata() const {
-  return m_metadata;
-}
-
-void PersistedLog::SetMetadata(const protocol::log::LogMetadata& metadata) {
-  m_metadata = std::make_tuple(metadata, true);
-  std::string metadata_path = m_dir + "metadata";
-  PersistMetadata(metadata_path);
-}
-
-bool PersistedLog::Empty(const std::string& path) const {
-  return std::filesystem::file_size(path) == 0;
-}
-
 
 protocol::log::LogEntry PersistedLog::Entry(const std::size_t idx) const {
   if (idx > LastLogIndex()) {
@@ -164,8 +159,65 @@ std::vector<protocol::log::LogEntry> PersistedLog::Entries(std::size_t start, st
   return query_entries;
 }
 
-std::size_t PersistedLog::LogSize() const {
-  return m_log_size;
+bool PersistedLog::Append(const std::vector<protocol::log::LogEntry>& new_entries) {
+  try {
+    PersistLogEntries(new_entries);
+    return true;
+  } catch (const std::runtime_error& e) {
+    return false;
+  }
+}
+
+void PersistedLog::TruncateSuffix(const std::size_t removal_index) {
+  Logger::Debug("Attempting to truncate log to index =", removal_index - 1);
+
+  if (removal_index > LastLogIndex()) {
+    return;
+  }
+
+  // Removal of only a portion of the open file
+  if (removal_index > m_open_page->start_index) {
+    // TODO: Replace current open file with new open file with updated log entries, end index, and byte offset
+    // m_open_page->log_entries.erase(
+    //     m_open_page->log_entries.begin() + removal_index - m_open_page->start_index,
+    //     m_open_page->log_entries.end());
+    return;
+  }
+
+  // TODO: Delete current open file and replace with empty open file
+  m_log_indices.erase(m_open_page->start_index);
+
+  while (!m_log_indices.empty()) {
+    auto it = m_log_indices.rbegin();
+    auto page = it->second;
+
+    if (page->start_index >= removal_index) {
+      // TODO: Handle logic for deleting entire closed page
+
+    } else if (page->end_index >= removal_index) {
+      // TODO: Handle logic for truncating closed page from [removal_index, page->end_index)
+
+      return;
+    }
+  }
+}
+
+std::vector<std::string> PersistedLog::ListDirectoryContents(const std::string& dir) {
+  std::vector<std::string> file_list;
+  for (const auto& entry:std::filesystem::directory_iterator(dir)) {
+    if (std::filesystem::is_regular_file(entry)) {
+      file_list.push_back(entry.path().filename());
+    }
+  }
+  return file_list;
+}
+
+bool PersistedLog::Empty(const std::string& path) const {
+  return std::filesystem::file_size(path) == 0;
+}
+
+bool PersistedLog::IsFileOpen(const std::string& filename) const {
+  return filename.substr(0, 4) == "open";
 }
 
 void PersistedLog::RestoreState() {
@@ -256,17 +308,6 @@ std::vector<protocol::log::LogEntry> PersistedLog::LoadLogEntries(const std::str
   return log_entries;
 }
 
-std::vector<std::string> PersistedLog::ListDirectoryContents(const std::string& dir) {
-  std::vector<std::string> file_list;
-  for (const auto& entry:std::filesystem::directory_iterator(dir)) {
-    if (std::filesystem::is_regular_file(entry)) {
-      file_list.push_back(entry.path().filename());
-    }
-  }
-  return file_list;
-}
-
-
 protocol::log::LogMetadata PersistedLog::LoadMetadata(const std::string& metadata_path) const {
   std::fstream in(metadata_path, std::ios::in | std::ios::binary);
 
@@ -282,10 +323,6 @@ protocol::log::LogMetadata PersistedLog::LoadMetadata(const std::string& metadat
   Logger::Debug("Restored metadata from disk, term =", metadata.term(), "vote =", metadata.vote());
 
   return metadata;
-}
-
-bool PersistedLog::IsFileOpen(const std::string& filename) const {
-  return filename.substr(0, 4) == "open";
 }
 
 }

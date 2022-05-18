@@ -13,6 +13,7 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_state(RaftState::CANDIDATE)
   , m_last_applied(-1)
   , m_commit_index(-1)
+  , m_leader_id("")
   , m_timer_executor(std::make_shared<core::Strand>()) {
 }
 
@@ -150,6 +151,7 @@ void ConcensusModule::ResetToFollower(const std::size_t term) {
 void ConcensusModule::PromoteToLeader() {
   m_state.store(RaftState::LEADER);
   m_votes_received = 0;
+  m_leader_id = m_ctx.address;
   Logger::Debug("Promoted to leader, term:", Term());
 
   m_election_timer->Cancel();
@@ -166,6 +168,7 @@ void ConcensusModule::StoreState() const {
   metadata.set_term(Term());
   metadata.set_vote(m_vote);
   m_ctx.LogInstance()->SetMetadata(metadata);
+  Logger::Debug("Persisted metadata to disk, term =", Term(), "vote =", m_vote);
 }
 
 std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::ProcessRequestVoteClientRequest(
@@ -190,6 +193,7 @@ std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::
        (request.lastlogterm() == last_log_term && request.lastlogindex() >= last_log_index))) {
     reply.set_votegranted(true);
     m_vote = request.candidateid();
+    StoreState();
 
     ScheduleElection(request.term());
   } else {
@@ -250,15 +254,27 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
         (request.prevlogindex() < m_ctx.LogInstance()->LogSize() &&
          request.prevlogterm() == m_ctx.LogInstance()->Entry(request.prevlogindex()).term())) {
       success = true;
+      m_leader_id = request.leaderid();
 
       std::size_t log_insert_index = request.prevlogindex() + 1;
       std::size_t new_entries_index = 0;
 
+      // while (log_insert_index < m_ctx.LogInstance()->LogSize() &&
+      //     new_entries_index < request.entries().size() &&
+      //     m_ctx.LogInstance()->Entry(log_insert_index).term() == request.entries()[new_entries_index].term()) {
+      //   log_insert_index++;
+      //   new_entries_index++;
+      // }
+
       while (log_insert_index < m_ctx.LogInstance()->LogSize() &&
-          new_entries_index < request.entries().size() &&
-          m_ctx.LogInstance()->Entry(log_insert_index).term() == request.entries()[new_entries_index].term()) {
-        log_insert_index++;
-        new_entries_index++;
+          new_entries_index < request.entries().size()) {
+        if (m_ctx.LogInstance()->Entry(log_insert_index).term() == request.entries()[new_entries_index].term()) {
+          log_insert_index++;
+          new_entries_index++;
+        } else {
+          m_ctx.LogInstance()->TruncateSuffix(log_insert_index);
+          break;
+        }
       }
 
       if (new_entries_index < request.entries().size()) {
@@ -296,6 +312,7 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
     const std::string& address) {
   if (reply.term() > request.term()) {
     Logger::Debug("Term out of date in heartbeat reply, changed from", request.term(), "to", reply.term());
+    m_leader_id = "";
     ResetToFollower(reply.term());
   }
 

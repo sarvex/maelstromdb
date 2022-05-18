@@ -61,6 +61,13 @@ public:
       protocol::raft::AppendEntries_Response& reply,
       const std::string& address);
 
+  std::tuple<protocol::raft::InstallSnapshot_Response, grpc::Status> ProcessInstallSnapshotClientRequest(
+      protocol::raft::InstallSnapshot_Request& request);
+
+  void ProcessInstallSnapshotServerResponse(
+      protocol::raft::InstallSnapshot_Request& request,
+      protocol::raft::InstallSnapshot_Response& reply);
+
 private:
   void ElectionCallback(const std::size_t term);
 
@@ -89,6 +96,7 @@ private:
   std::atomic<ssize_t> m_commit_index;
   std::unordered_map<std::string, std::size_t> m_next_index;
   std::unordered_map<std::string, ssize_t> m_match_index;
+  std::string m_leader_id;
 };
 
 }
