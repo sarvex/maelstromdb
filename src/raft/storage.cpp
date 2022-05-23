@@ -49,19 +49,24 @@ PersistedLog::Page& PersistedLog::Page::operator=(const Page&& page) {
   return *this;
 } 
 
+PersistedLog::Page::Record::Record(std::size_t offset, protocol::log::LogEntry entry)
+  : offset(offset), entry(entry) {
+}
+
 void PersistedLog::Page::Close() {
   if (!is_open) {
     return;
   }
   is_open = false;
 
-  std::string close_file_format = "%020lu-%020lu";
-  auto size = std::snprintf(nullptr, 0, close_file_format.c_str(), start_index, end_index) + 1;
-  std::unique_ptr<char[]> buffer(new char[size]);
-  std::snprintf(buffer.get(), size, close_file_format.c_str(), start_index, end_index);
-  std::string closed_filename = std::string(buffer.get(), buffer.get() + size - 1);
-  std::filesystem::rename(dir + filename, dir + closed_filename);
-  filename = closed_filename;
+  if (start_index == end_index) {
+    std::filesystem::remove(dir + filename);
+    return;
+  }
+
+  auto new_filename = ClosedFilename();
+  std::filesystem::rename(dir + filename, dir + new_filename);
+  filename = new_filename;
 }
 
 std::size_t PersistedLog::Page::RemainingSpace() const {
@@ -71,11 +76,40 @@ std::size_t PersistedLog::Page::RemainingSpace() const {
 bool PersistedLog::Page::WriteLogEntry(std::fstream& file, const protocol::log::LogEntry& new_entry) {
   bool success = google::protobuf::util::SerializeDelimitedToOstream(new_entry, &file);
   if (success) {
+    log_entries.push_back(Page::Record(byte_offset, new_entry));
     byte_offset += new_entry.ByteSizeLong();
     end_index++;
-    log_entries.push_back(new_entry);
   }
   return success;
+}
+
+void PersistedLog::Page::TruncateSuffix(std::size_t removal_index) {
+  std::size_t last_record_index = removal_index - start_index;
+  std::size_t truncate_offset = log_entries[last_record_index].offset;
+
+  std::filesystem::resize_file(dir + filename, truncate_offset);
+
+  log_entries.erase(
+        log_entries.begin() + last_record_index,
+        log_entries.end());
+  byte_offset = truncate_offset;
+  end_index = removal_index;
+
+  // Closed file must be renamed since end_index has changed
+  if (!is_open) {
+    std::string new_filename = ClosedFilename();
+    std::filesystem::rename(dir + filename, dir + new_filename);
+    filename = new_filename;
+  }
+}
+
+std::string PersistedLog::Page::ClosedFilename() const {
+  std::string close_file_format = "%020lu-%020lu";
+  auto size = std::snprintf(nullptr, 0, close_file_format.c_str(), start_index, end_index) + 1;
+  std::unique_ptr<char[]> buffer(new char[size]);
+  std::snprintf(buffer.get(), size, close_file_format.c_str(), start_index, end_index);
+  std::string closed_filename = std::string(buffer.get(), buffer.get() + size - 1);
+  return closed_filename;
 }
 
 PersistedLog::PersistedLog(
@@ -130,7 +164,7 @@ protocol::log::LogEntry PersistedLog::Entry(const std::size_t idx) const {
   auto it = m_log_indices.upper_bound(idx);
   it--;
   const auto& page = it->second;
-  return page->log_entries[idx - page->start_index];
+  return page->log_entries[idx - page->start_index].entry;
 }
 
 std::vector<protocol::log::LogEntry> PersistedLog::Entries(std::size_t start, std::size_t end) const {
@@ -139,7 +173,7 @@ std::vector<protocol::log::LogEntry> PersistedLog::Entries(std::size_t start, st
     throw std::out_of_range("Raft log slice query invalid");
   }
 
-  std::vector<protocol::log::LogEntry> query_entries;
+  std::vector<Page::Record> query_records;
   std::size_t curr = start;
   while (curr < end) {
     auto it = m_log_indices.upper_bound(curr);
@@ -148,12 +182,17 @@ std::vector<protocol::log::LogEntry> PersistedLog::Entries(std::size_t start, st
 
     start = start >= page->start_index ? start - page->start_index : 0;
     if (page->end_index >= end) {
-      query_entries.insert(query_entries.end(), page->log_entries.begin() + start, page->log_entries.begin() + end - page->start_index);
+      query_records.insert(query_records.end(), page->log_entries.begin() + start, page->log_entries.begin() + end - page->start_index);
     } else {
-      query_entries.insert(query_entries.end(), page->log_entries.begin() + start, page->log_entries.end());
+      query_records.insert(query_records.end(), page->log_entries.begin() + start, page->log_entries.end());
     }
 
     curr = page->end_index;
+  }
+
+  std::vector<protocol::log::LogEntry> query_entries;
+  for (auto& record:query_records) {
+    query_entries.push_back(record.entry);
   }
 
   return query_entries;
@@ -177,26 +216,32 @@ void PersistedLog::TruncateSuffix(const std::size_t removal_index) {
 
   // Removal of only a portion of the open file
   if (removal_index > m_open_page->start_index) {
-    // TODO: Replace current open file with new open file with updated log entries, end index, and byte offset
-    // m_open_page->log_entries.erase(
-    //     m_open_page->log_entries.begin() + removal_index - m_open_page->start_index,
-    //     m_open_page->log_entries.end());
+    m_log_size -= m_open_page->end_index - removal_index;
+    m_open_page->TruncateSuffix(removal_index);
+    CreateOpenFile();
     return;
   }
 
-  // TODO: Delete current open file and replace with empty open file
+  // Delete current open file and replace with empty open file
   m_log_indices.erase(m_open_page->start_index);
+  m_open_page->end_index = m_open_page->start_index;
+  m_open_page->byte_offset = 0;
+  m_open_page->log_entries = {};
+  CreateOpenFile();
 
   while (!m_log_indices.empty()) {
     auto it = m_log_indices.rbegin();
     auto page = it->second;
 
     if (page->start_index >= removal_index) {
-      // TODO: Handle logic for deleting entire closed page
-
+      // Delete all log entries of closed file
+      std::filesystem::remove(m_dir + page->filename);
+      m_log_indices.erase(page->start_index);
+      m_log_size -= page->end_index - page->start_index;
     } else if (page->end_index >= removal_index) {
-      // TODO: Handle logic for truncating closed page from [removal_index, page->end_index)
-
+      // Removal of only a potion of log entries in a closed file
+      m_log_size -= page->end_index - page->start_index;
+      page->TruncateSuffix(removal_index);
       return;
     }
   }
@@ -271,11 +316,8 @@ void PersistedLog::PersistLogEntries(const std::vector<protocol::log::LogEntry>&
   bool success = true;
   for (auto &entry:new_entries) {
     if (entry.ByteSizeLong() > m_open_page->RemainingSpace()) {
-      m_open_page->Close();
+      CreateOpenFile();
       out.close();
-
-      m_open_page = std::make_shared<Page>(LogSize(), m_dir, true, m_max_file_size);
-      m_log_indices.insert({m_open_page->start_index, m_open_page});
 
       log_path = m_dir + m_open_page->filename;
       out.open(log_path, std::ios::out | std::ios::app | std::ios::binary);
@@ -292,15 +334,16 @@ void PersistedLog::PersistLogEntries(const std::vector<protocol::log::LogEntry>&
   out.flush();
 }
 
-std::vector<protocol::log::LogEntry> PersistedLog::LoadLogEntries(const std::string& log_path) const {
+std::vector<PersistedLog::Page::Record> PersistedLog::LoadLogEntries(const std::string& log_path) const {
   std::fstream in(log_path, std::ios::in | std::ios::binary);
 
   google::protobuf::io::IstreamInputStream log_stream(&in);
-  std::vector<protocol::log::LogEntry> log_entries;
+  std::vector<Page::Record> log_entries;
   protocol::log::LogEntry temp_log_entry;
 
   while (google::protobuf::util::ParseDelimitedFromZeroCopyStream(&temp_log_entry, &log_stream, nullptr)) {
-    log_entries.push_back(temp_log_entry);
+    std::size_t offset = log_stream.ByteCount() - temp_log_entry.ByteSizeLong() - 1;
+    log_entries.push_back(Page::Record(offset, temp_log_entry));
   }
 
   Logger::Debug("Restored log entries from disk, size =", log_entries.size());
@@ -323,6 +366,14 @@ protocol::log::LogMetadata PersistedLog::LoadMetadata(const std::string& metadat
   Logger::Debug("Restored metadata from disk, term =", metadata.term(), "vote =", metadata.vote());
 
   return metadata;
+}
+
+void PersistedLog::CreateOpenFile() {
+  m_open_page->Close();
+
+  m_open_page = std::make_shared<Page>(LogSize(), m_dir, true, m_max_file_size);
+  m_log_indices.insert({m_open_page->start_index, m_open_page});
+
 }
 
 }

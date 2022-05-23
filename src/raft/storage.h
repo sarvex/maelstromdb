@@ -6,6 +6,7 @@
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/util/delimited_message_util.h>
 #include <algorithm>
+#include <cassert>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -69,6 +70,14 @@ public:
 
   class Page {
   public:
+    struct Record {
+      Record(std::size_t offset, protocol::log::LogEntry entry);
+
+      protocol::log::LogEntry entry;
+      std::size_t offset;
+    };
+
+  public:
     Page(
         const std::size_t start,
         const std::string& dir,
@@ -84,6 +93,11 @@ public:
 
     bool WriteLogEntry(std::fstream& file, const protocol::log::LogEntry& new_entry);
 
+    void TruncateSuffix(std::size_t removal_index);
+
+  private:
+    std::string ClosedFilename() const;
+
   public:
     bool is_open;
     std::size_t byte_offset;
@@ -91,7 +105,7 @@ public:
     std::size_t end_index;
     std::string dir;
     std::string filename;
-    std::vector<protocol::log::LogEntry> log_entries;
+    std::vector<Record> log_entries;
     const std::size_t max_file_size;
   };
 
@@ -108,7 +122,9 @@ private:
   void PersistLogEntries(const std::vector<protocol::log::LogEntry>& new_entries);
 
   protocol::log::LogMetadata LoadMetadata(const std::string& metadata_path) const;
-  std::vector<protocol::log::LogEntry> LoadLogEntries(const std::string& log_path) const;
+  std::vector<Page::Record> LoadLogEntries(const std::string& log_path) const;
+
+  void CreateOpenFile();
 
 private:
   std::shared_ptr<Page> m_open_page;
