@@ -87,6 +87,7 @@ void PersistedLog::Page::TruncateSuffix(std::size_t removal_index) {
   std::size_t last_record_index = removal_index - start_index;
   std::size_t truncate_offset = log_entries[last_record_index].offset;
 
+  Logger::Debug(truncate_offset);
   std::filesystem::resize_file(dir + filename, truncate_offset);
 
   log_entries.erase(
@@ -208,7 +209,7 @@ bool PersistedLog::Append(const std::vector<protocol::log::LogEntry>& new_entrie
 }
 
 void PersistedLog::TruncateSuffix(const std::size_t removal_index) {
-  Logger::Debug("Attempting to truncate log to index =", removal_index - 1);
+  Logger::Debug("Attempting to truncate log at index =", removal_index);
 
   if (removal_index > LastLogIndex()) {
     return;
@@ -224,6 +225,7 @@ void PersistedLog::TruncateSuffix(const std::size_t removal_index) {
 
   // Delete current open file and replace with empty open file
   m_log_indices.erase(m_open_page->start_index);
+  m_log_size -= m_open_page->end_index - m_open_page->start_index;
   m_open_page->end_index = m_open_page->start_index;
   m_open_page->byte_offset = 0;
   m_open_page->log_entries = {};
@@ -238,10 +240,12 @@ void PersistedLog::TruncateSuffix(const std::size_t removal_index) {
       std::filesystem::remove(m_dir + page->filename);
       m_log_indices.erase(page->start_index);
       m_log_size -= page->end_index - page->start_index;
-    } else if (page->end_index >= removal_index) {
-      // Removal of only a potion of log entries in a closed file
-      m_log_size -= page->end_index - page->start_index;
+    } else if (page->end_index > removal_index) {
+      // Removal of only a portion of log entries in a closed file
+      m_log_size -= page->end_index - removal_index;
       page->TruncateSuffix(removal_index);
+      return;
+    } else {
       return;
     }
   }
