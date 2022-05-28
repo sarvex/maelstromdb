@@ -38,7 +38,7 @@ public:
   virtual protocol::log::LogEntry Entry(const std::size_t idx) const = 0;
   virtual std::vector<protocol::log::LogEntry> Entries(std::size_t start, std::size_t end) const = 0;
 
-  virtual bool Append(const std::vector<protocol::log::LogEntry>& new_entries) = 0;
+  virtual void Append(const std::vector<protocol::log::LogEntry>& new_entries) = 0;
 
   virtual void TruncateSuffix(const std::size_t removal_index) = 0;
 
@@ -64,7 +64,7 @@ public:
   protocol::log::LogEntry Entry(const std::size_t idx) const override;
   std::vector<protocol::log::LogEntry> Entries(std::size_t start, std::size_t end) const override;
 
-  bool Append(const std::vector<protocol::log::LogEntry>& new_entries) override;
+  void Append(const std::vector<protocol::log::LogEntry>& new_entries) override;
 
   void TruncateSuffix(const std::size_t removal_index) override;
 

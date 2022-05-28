@@ -255,7 +255,6 @@ std::thread TimerQueue::UpdateWorkerThread(std::unique_lock<std::mutex>& lock) {
   });
 
   m_idle = false;
-
   return prev_worker;
 }
 

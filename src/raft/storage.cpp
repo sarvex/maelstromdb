@@ -199,13 +199,11 @@ std::vector<protocol::log::LogEntry> PersistedLog::Entries(std::size_t start, st
   return query_entries;
 }
 
-bool PersistedLog::Append(const std::vector<protocol::log::LogEntry>& new_entries) {
-  try {
-    PersistLogEntries(new_entries);
-    return true;
-  } catch (const std::runtime_error& e) {
-    return false;
-  }
+void PersistedLog::Append(const std::vector<protocol::log::LogEntry>& new_entries) {
+  // m_file_executor->Enqueue(
+  //     std::bind(&PersistedLog::PersistLogEntries, this, new_entries));
+
+  PersistLogEntries(new_entries);
 }
 
 void PersistedLog::TruncateSuffix(const std::size_t removal_index) {

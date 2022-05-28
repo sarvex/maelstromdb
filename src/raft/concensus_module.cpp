@@ -259,13 +259,6 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
       std::size_t log_insert_index = request.prevlogindex() + 1;
       std::size_t new_entries_index = 0;
 
-      // while (log_insert_index < m_ctx.LogInstance()->LogSize() &&
-      //     new_entries_index < request.entries().size() &&
-      //     m_ctx.LogInstance()->Entry(log_insert_index).term() == request.entries()[new_entries_index].term()) {
-      //   log_insert_index++;
-      //   new_entries_index++;
-      // }
-
       while (log_insert_index < m_ctx.LogInstance()->LogSize() &&
           new_entries_index < request.entries().size()) {
         if (m_ctx.LogInstance()->Entry(log_insert_index).term() == request.entries()[new_entries_index].term()) {
