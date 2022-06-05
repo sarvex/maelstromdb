@@ -11,10 +11,10 @@ Log::~Log() {
 }
 
 PersistedLog::Page::Page(
-    const std::size_t start,
+    const int start,
     const std::string& dir,
     const bool is_open,
-    const std::size_t max_file_size)
+    const int max_file_size)
   : is_open(is_open)
   , byte_offset(0)
   , start_index(start) 
@@ -49,7 +49,7 @@ PersistedLog::Page& PersistedLog::Page::operator=(const Page&& page) {
   return *this;
 } 
 
-PersistedLog::Page::Record::Record(std::size_t offset, protocol::log::LogEntry entry)
+PersistedLog::Page::Record::Record(int offset, protocol::log::LogEntry entry)
   : offset(offset), entry(entry) {
 }
 
@@ -69,7 +69,7 @@ void PersistedLog::Page::Close() {
   filename = new_filename;
 }
 
-std::size_t PersistedLog::Page::RemainingSpace() const {
+int PersistedLog::Page::RemainingSpace() const {
   return max_file_size - byte_offset;
 }
 
@@ -83,9 +83,9 @@ bool PersistedLog::Page::WriteLogEntry(std::fstream& file, const protocol::log::
   return success;
 }
 
-void PersistedLog::Page::TruncateSuffix(std::size_t removal_index) {
-  std::size_t last_record_index = removal_index - start_index;
-  std::size_t truncate_offset = log_entries[last_record_index].offset;
+void PersistedLog::Page::TruncateSuffix(int removal_index) {
+  int last_record_index = removal_index - start_index;
+  int truncate_offset = log_entries[last_record_index].offset;
 
   Logger::Debug(truncate_offset);
   std::filesystem::resize_file(dir + filename, truncate_offset);
@@ -115,7 +115,7 @@ std::string PersistedLog::Page::ClosedFilename() const {
 
 PersistedLog::PersistedLog(
     const std::string& parent_dir,
-    const std::size_t max_file_size)
+    const int max_file_size)
   : Log()
   , m_dir(parent_dir)
   , m_max_file_size(max_file_size)
@@ -140,15 +140,15 @@ void PersistedLog::SetMetadata(const protocol::log::LogMetadata& metadata) {
   PersistMetadata(metadata_path);
 }
 
-std::size_t PersistedLog::LogSize() const {
+int PersistedLog::LogSize() const {
   return m_log_size;
 }
 
-ssize_t PersistedLog::LastLogIndex() const {
+int PersistedLog::LastLogIndex() const {
   return LogSize() - 1;
 }
 
-ssize_t PersistedLog::LastLogTerm() const {
+int PersistedLog::LastLogTerm() const {
   if (LogSize() > 0) {
     return Entry(LastLogIndex()).term();
   } else {
@@ -156,7 +156,7 @@ ssize_t PersistedLog::LastLogTerm() const {
   }
 }
 
-protocol::log::LogEntry PersistedLog::Entry(const std::size_t idx) const {
+protocol::log::LogEntry PersistedLog::Entry(const int idx) const {
   if (idx > LastLogIndex()) {
     Logger::Error("Raft log index out of bounds, index =", idx, "last_log_index =", LastLogIndex());
     throw std::out_of_range("Raft log index out of bounds");
@@ -168,14 +168,14 @@ protocol::log::LogEntry PersistedLog::Entry(const std::size_t idx) const {
   return page->log_entries[idx - page->start_index].entry;
 }
 
-std::vector<protocol::log::LogEntry> PersistedLog::Entries(std::size_t start, std::size_t end) const {
+std::vector<protocol::log::LogEntry> PersistedLog::Entries(int start, int end) const {
   if (start > end || end > LastLogIndex() + 1) {
     Logger::Error("Raft log slice query invalid, start =", start, "end =", end, "last_log_index =", LastLogIndex());
     throw std::out_of_range("Raft log slice query invalid");
   }
 
   std::vector<Page::Record> query_records;
-  std::size_t curr = start;
+  int curr = start;
   while (curr < end) {
     auto it = m_log_indices.upper_bound(curr);
     it--;
@@ -200,13 +200,10 @@ std::vector<protocol::log::LogEntry> PersistedLog::Entries(std::size_t start, st
 }
 
 void PersistedLog::Append(const std::vector<protocol::log::LogEntry>& new_entries) {
-  // m_file_executor->Enqueue(
-  //     std::bind(&PersistedLog::PersistLogEntries, this, new_entries));
-
   PersistLogEntries(new_entries);
 }
 
-void PersistedLog::TruncateSuffix(const std::size_t removal_index) {
+void PersistedLog::TruncateSuffix(const int removal_index) {
   Logger::Debug("Attempting to truncate log at index =", removal_index);
 
   if (removal_index > LastLogIndex()) {
@@ -287,8 +284,8 @@ void PersistedLog::RestoreState() {
       m_open_page->end_index = m_open_page->start_index + restored_entries.size();
       m_open_page->log_entries = std::move(restored_entries);
     } else {
-      std::size_t dash_index = filename.find('-');
-      std::size_t start = std::stoi(filename.substr(0, dash_index));
+      int dash_index = filename.find('-');
+      int start = std::stoi(filename.substr(0, dash_index));
       auto closed_page = std::make_shared<Page>(start, m_dir, false, m_max_file_size);
 
       m_log_size += restored_entries.size();
@@ -344,7 +341,7 @@ std::vector<PersistedLog::Page::Record> PersistedLog::LoadLogEntries(const std::
   protocol::log::LogEntry temp_log_entry;
 
   while (google::protobuf::util::ParseDelimitedFromZeroCopyStream(&temp_log_entry, &log_stream, nullptr)) {
-    std::size_t offset = log_stream.ByteCount() - temp_log_entry.ByteSizeLong() - 1;
+    int offset = log_stream.ByteCount() - temp_log_entry.ByteSizeLong() - 1;
     log_entries.push_back(Page::Record(offset, temp_log_entry));
   }
 

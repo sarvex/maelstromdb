@@ -24,7 +24,7 @@ public:
 
 public:
   TimerEvent(
-      std::size_t delay,
+      int delay,
       std::shared_ptr<AsyncExecutor> executor,
       std::shared_ptr<TimerQueue> timer_queue);
 
@@ -35,13 +35,13 @@ public:
   virtual void SetCallback(std::function<void()>&& func) = 0;
 
   time_point Deadline() const;
-  void SetDeadline(std::size_t delay); 
+  void SetDeadline(int delay); 
 
   void Cancel();
   bool Cancelled() const;
 
-  std::size_t Delay() const;
-  void SetDelay(std::size_t);
+  int Delay() const;
+  void SetDelay(int);
 
   void Reset();
 
@@ -57,13 +57,13 @@ protected:
   std::shared_ptr<AsyncExecutor> m_executor;
   std::shared_ptr<TimerQueue> m_request_queue;
   time_point m_deadline;
-  std::size_t m_delay;
+  int m_delay;
 };
 
 class TimerCallbackEvent : public TimerEvent {
 public:
   TimerCallbackEvent(
-      std::size_t delay,
+      int delay,
       std::shared_ptr<AsyncExecutor> executor,
       std::shared_ptr<TimerQueue> timer_queue,
       std::function<void()>&& callback);
@@ -84,8 +84,8 @@ public:
   void Cancel();
 
   void Reset();
-  void Reset(std::size_t delay);
-  void Reset(std::function<void()>&& callback, std::size_t delay);
+  void Reset(int delay);
+  void Reset(std::function<void()>&& callback, int delay);
 
 private:
   std::shared_ptr<TimerEvent> m_timer_ctx;
@@ -100,7 +100,7 @@ public:
   ~TimerQueue();
 
   std::shared_ptr<DeadlineTimer> CreateTimer(
-      std::size_t delay,
+      int delay,
       std::shared_ptr<AsyncExecutor> executor,
       std::function<void()>&& callback);
 

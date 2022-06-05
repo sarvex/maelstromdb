@@ -3,7 +3,7 @@
 namespace core {
 
 TimerEvent::TimerEvent(
-    std::size_t delay,
+    int delay,
     std::shared_ptr<AsyncExecutor> executor,
     std::shared_ptr<TimerQueue> timer_queue)
   : m_executor(std::move(executor))
@@ -20,7 +20,7 @@ TimerEvent::time_point TimerEvent::Deadline() const {
   return m_deadline;
 }
 
-void TimerEvent::SetDeadline(std::size_t delay) {
+void TimerEvent::SetDeadline(int delay) {
   m_deadline = clock_type::now() + milliseconds(delay);
 }
 
@@ -32,11 +32,11 @@ bool TimerEvent::Cancelled() const {
     return m_cancelled.load();
 }
 
-std::size_t TimerEvent::Delay() const {
+int TimerEvent::Delay() const {
   return m_delay;
 }
 
-void TimerEvent::SetDelay(std::size_t delay) {
+void TimerEvent::SetDelay(int delay) {
   m_delay = delay;
 }
 
@@ -61,7 +61,7 @@ bool TimerEvent::operator<(const TimerEvent& rhs) {
 }
 
 TimerCallbackEvent::TimerCallbackEvent(
-    std::size_t delay,
+    int delay,
     std::shared_ptr<AsyncExecutor> executor,
     std::shared_ptr<TimerQueue> timer_queue,
     std::function<void()>&& callback)
@@ -102,12 +102,12 @@ void DeadlineTimer::Reset() {
   timer_queue->AddTimer(m_timer_ctx);
 }
 
-void DeadlineTimer::Reset(std::size_t delay) {
+void DeadlineTimer::Reset(int delay) {
   m_timer_ctx->SetDelay(delay);
   Reset();
 }
 
-void DeadlineTimer::Reset(std::function<void()>&& callback, std::size_t delay) {
+void DeadlineTimer::Reset(std::function<void()>&& callback, int delay) {
   m_timer_ctx->SetCallback(std::move(callback));
   Reset(delay);
 }
@@ -121,7 +121,7 @@ TimerQueue::~TimerQueue() {
 }
 
 std::shared_ptr<DeadlineTimer> TimerQueue::CreateTimer(
-    std::size_t delay,
+    int delay,
     std::shared_ptr<AsyncExecutor> executor,
     std::function<void()>&& callback) {
   auto ctx = std::make_shared<TimerCallbackEvent>(

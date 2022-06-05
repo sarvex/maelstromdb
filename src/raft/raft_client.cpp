@@ -16,9 +16,9 @@ void RaftClient::ClientInit() {
 
 void RaftClient::RequestVote(
     const std::string& peer_id,
-    const std::size_t term,
-    const std::size_t last_log_index,
-    const std::size_t last_log_term) {
+    const int term,
+    const int last_log_index,
+    const int last_log_term) {
   protocol::raft::RequestVote_Request request_args;
   request_args.set_term(term);
   request_args.set_candidateid(m_ctx.address);
@@ -40,10 +40,10 @@ void RaftClient::RequestVote(
 
 void RaftClient::AppendEntries(
     const std::string& peer_id,
-    const std::size_t term,
-    const std::size_t prev_log_index,
-    const std::size_t prev_log_term,
-    const std::size_t leader_commit) {
+    const int term,
+    const int prev_log_index,
+    const int prev_log_term,
+    const int leader_commit) {
   protocol::raft::AppendEntries_Request request_args;
   request_args.set_term(term);
   request_args.set_leaderid(m_ctx.address);

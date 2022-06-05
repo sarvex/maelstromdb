@@ -17,7 +17,7 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_timer_executor(std::make_shared<core::Strand>()) {
 }
 
-void ConcensusModule::StateMachineInit(std::size_t delay) {
+void ConcensusModule::StateMachineInit(int delay) {
   for (auto peer:m_ctx.peer_ids) {
     m_next_index[peer] = 0;
     m_match_index[peer] = -1;
@@ -43,7 +43,7 @@ void ConcensusModule::StateMachineInit(std::size_t delay) {
   ScheduleElection(Term());
 }
 
-std::size_t ConcensusModule::Term() const {
+int ConcensusModule::Term() const {
   return m_term.load();
 }
 
@@ -51,7 +51,7 @@ ConcensusModule::RaftState ConcensusModule::State() const {
   return m_state.load();
 }
 
-void ConcensusModule::ElectionCallback(const std::size_t term) {
+void ConcensusModule::ElectionCallback(const int term) {
   if (State() != RaftState::CANDIDATE && State() != RaftState::FOLLOWER) {
     Logger::Debug("Concensus module state invalid for election");
     return;
@@ -64,14 +64,14 @@ void ConcensusModule::ElectionCallback(const std::size_t term) {
 
   m_state.store(RaftState::CANDIDATE);
   m_term++;
-  std::size_t saved_term = Term();
+  int saved_term = Term();
   m_vote = m_ctx.address;
   m_votes_received = 1;
 
   StoreState();
 
-  std::size_t last_log_index = 0;
-  std::size_t last_log_term = 0;
+  int last_log_index = 0;
+  int last_log_term = 0;
   for (auto peer_id:m_ctx.peer_ids) {
     Logger::Debug("Sending RequestVote rpc to", peer_id);
 
@@ -91,11 +91,11 @@ void ConcensusModule::HeartbeatCallback() {
     return;
   }
 
-  std::size_t saved_term = Term();
+  int saved_term = Term();
 
-  std::size_t prev_log_index = 0;
-  std::size_t prev_log_term = 0;
-  std::size_t leader_commit = 0;
+  int prev_log_index = 0;
+  int prev_log_term = 0;
+  int leader_commit = 0;
   for (auto peer_id:m_ctx.peer_ids) {
     Logger::Debug("Sending AppendEntries rpc to", peer_id);
 
@@ -110,7 +110,7 @@ void ConcensusModule::HeartbeatCallback() {
   ScheduleHeartbeat();
 }
 
-void ConcensusModule::ScheduleElection(const std::size_t term) {
+void ConcensusModule::ScheduleElection(const int term) {
   std::random_device rd; // obtain a random number from hardware
   std::mt19937 gen(rd()); // seed the generator
   std::uniform_int_distribution<> distr(150, 300);
@@ -134,7 +134,7 @@ void ConcensusModule::Shutdown() {
   Logger::Info("Node shutdown");
 }
 
-void ConcensusModule::ResetToFollower(const std::size_t term) {
+void ConcensusModule::ResetToFollower(const int term) {
   m_state.store(RaftState::FOLLOWER);
   m_term.store(term);
   m_vote = "";
@@ -159,7 +159,7 @@ void ConcensusModule::PromoteToLeader() {
   ScheduleHeartbeat();
 }
 
-bool ConcensusModule::CheckQuorum(const std::size_t votes) const {
+bool ConcensusModule::CheckQuorum(const int votes) const {
   return votes*2 > m_ctx.peer_ids.size() + 1;
 }
 
@@ -256,8 +256,8 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
       success = true;
       m_leader_id = request.leaderid();
 
-      std::size_t log_insert_index = request.prevlogindex() + 1;
-      std::size_t new_entries_index = 0;
+      int log_insert_index = request.prevlogindex() + 1;
+      int new_entries_index = 0;
 
       while (log_insert_index < m_ctx.LogInstance()->LogSize() &&
           new_entries_index < request.entries().size()) {
@@ -276,11 +276,11 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
       }
 
       if (request.leadercommit() > m_commit_index) {
-        std::size_t new_commit_index = std::min((std::size_t)request.leadercommit(), m_ctx.LogInstance()->LogSize());
+        int new_commit_index = std::min((int)request.leadercommit(), m_ctx.LogInstance()->LogSize());
         m_commit_index.store(new_commit_index);
         Logger::Debug("Setting commit index =", new_commit_index);
 
-        std::size_t new_last_applied = m_last_applied;
+        int new_last_applied = m_last_applied;
         std::vector<protocol::log::LogEntry> uncommited_entries;
         while (new_last_applied < new_commit_index) {
           new_last_applied++;
@@ -316,10 +316,10 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
       m_match_index[address] = next + request.entries().size() - 1;
       Logger::Debug("AppendEntries reply from", address, "successful: next_index =", m_next_index[address], "match_index =", m_match_index[address]);
 
-      std::size_t saved_commit_index = m_commit_index;
-      std::size_t log_size = m_ctx.LogInstance()->LogSize();
+      int saved_commit_index = m_commit_index;
+      int log_size = m_ctx.LogInstance()->LogSize();
       auto log_entries = m_ctx.LogInstance()->Entries(saved_commit_index + 1, log_size);
-      std::size_t new_commit_index = saved_commit_index;
+      int new_commit_index = saved_commit_index;
       for (int i = saved_commit_index + 1; i < log_size; i++) {
         if (log_entries[i - saved_commit_index - 1].term() == Term()) {
           int match_count = 1;
@@ -339,7 +339,7 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
         m_commit_index.store(new_commit_index);
         Logger::Debug("Leader set commit_index =", new_commit_index);
 
-        std::size_t new_last_applied = m_last_applied;
+        int new_last_applied = m_last_applied;
         std::vector<protocol::log::LogEntry> uncommited_entries;
         while (new_last_applied < new_commit_index) {
           new_last_applied++;

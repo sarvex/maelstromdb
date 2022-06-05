@@ -10,7 +10,7 @@ namespace raft {
 
 class LogTestBase : public ::testing::Test {
 protected:
-  void SetUp(const std::size_t count, const std::size_t max_file_size = 1024*8) {
+  void SetUp(const int count, const int max_file_size = 1024*8) {
     Logger::SetLevel(Logger::LogLevel::DEBUG);
     log = std::make_unique<PersistedLog>(
         std::filesystem::current_path().string() + "/test_log/",
@@ -33,7 +33,7 @@ protected:
 
   std::unique_ptr<PersistedLog> log;
   std::vector<protocol::log::LogEntry> entries;
-  std::size_t entry_count;
+  int entry_count;
 };
 
 class SetMetadataTest : public ::testing::Test {
@@ -54,14 +54,14 @@ protected:
 
 class AppendTest : public LogTestBase {
 protected:
-  void SetUp(const std::size_t count, const std::size_t max_file_size = 1024*8) {
+  void SetUp(const int count, const int max_file_size = 1024*8) {
     LogTestBase::SetUp(count, max_file_size);
   }
 };
 
 class RestoreStateTest : public LogTestBase {
 protected:
-  void SetUp(const std::size_t count, const std::size_t max_file_size = 1024*8) {
+  void SetUp(const int count, const int max_file_size = 1024*8) {
     LogTestBase::SetUp(count, max_file_size);
 
     log.reset(new PersistedLog(
@@ -72,7 +72,7 @@ protected:
 
 class TruncateTest : public LogTestBase {
 protected:
-  void SetUp(const std::size_t count, const std::size_t max_file_size = 1024*8) {
+  void SetUp(const int count, const int max_file_size = 1024*8) {
     LogTestBase::SetUp(count, max_file_size);
   }
 
