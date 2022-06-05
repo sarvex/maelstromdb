@@ -89,11 +89,19 @@ void Strand::ProcessEvents() {
   }
 }
 
-ThreadPoolExecutor::ThreadPoolWorker::ThreadPoolWorker()
-  : AsyncExecutor(), m_idle(false) {
-  m_worker = std::thread([this] {
-    EventLoop();
-  });
+ThreadPoolExecutor::ThreadPoolWorker::ThreadPoolWorker(
+    std::shared_ptr<ThreadPoolExecutor> executor,
+    int index)
+  : AsyncExecutor()
+  , m_idle(true)
+  , m_parent_pool(std::move(executor))
+  , m_pool_index(index) {
+}
+
+ThreadPoolExecutor::ThreadPoolWorker::ThreadPoolWorker(ThreadPoolWorker&& worker)
+  : m_idle(worker.m_idle.load())
+  , m_pool_index(std::move(worker.m_pool_index))
+  , m_parent_pool(std::move(worker.m_parent_pool)) {
 }
 
 void ThreadPoolExecutor::ThreadPoolWorker::Enqueue(const callback_t callback) {
@@ -134,6 +142,14 @@ void ThreadPoolExecutor::ThreadPoolWorker::Shutdown() {
   m_worker.join();
 }
 
+bool ThreadPoolExecutor::ThreadPoolWorker::Idle() const {
+  return m_idle.load();
+}
+
+void ThreadPoolExecutor::ThreadPoolWorker::SetWorkerActivity(bool is_active) {
+  m_idle.store(!is_active);
+}
+
 void ThreadPoolExecutor::ThreadPoolWorker::EventLoop() {
   while (true) {
     std::unique_lock<std::mutex> lock(m_lock);
@@ -146,15 +162,15 @@ void ThreadPoolExecutor::ThreadPoolWorker::EventLoop() {
     }
 
     if (m_abort.load() || !result) {
-      m_idle = true;
-      m_parent_pool->SetWorkerActivity(m_pool_index, false);
+      m_idle.store(true);
+      SetWorkerActivity(false);
       return;
     }
 
     m_process_queue = std::move(m_request_queue);
     lock.unlock();
 
-    m_parent_pool->SetWorkerActivity(m_pool_index, true);
+    SetWorkerActivity(true);
     ProcessEvents();
   }
 }
@@ -167,29 +183,29 @@ void ThreadPoolExecutor::ThreadPoolWorker::ProcessEvents() {
     m_process_queue.pop();
 
     if (m_abort.load()) {
-      m_idle = true;
+      m_idle.store(true);
       return;
     }
 
     callback();
   }
 
-  m_parent_pool->SetWorkerActivity(m_pool_index, false);
+  SetWorkerActivity(false);
 }
 
 void ThreadPoolExecutor::ThreadPoolWorker::BalanceWork() {
-  std::size_t task_count = m_process_queue.size();
+  int task_count = m_process_queue.size();
   if (task_count <= 1) {
     return;
   }
 
-  std::size_t max_idle_workers = std::min(m_parent_pool->PoolSize() - 1, task_count - 1);
+  int max_idle_workers = std::min(m_parent_pool->PoolSize() - 1, task_count - 1);
   auto idle_markers = m_parent_pool->FindIdleWorkers(max_idle_workers);
   if (idle_markers.size() == 0) {
     return;
   }
 
-  std::size_t new_tasks_per_worker = task_count/(idle_markers.size() + 1);
+  int new_tasks_per_worker = task_count/(idle_markers.size() + 1);
   for (auto& worker_index:idle_markers) {
     for (int i = 0; i < new_tasks_per_worker; i++) {
       m_parent_pool->Worker(worker_index).Enqueue(std::move(m_process_queue.front()));
@@ -200,7 +216,7 @@ void ThreadPoolExecutor::ThreadPoolWorker::BalanceWork() {
 
 void ThreadPoolExecutor::ThreadPoolWorker::UpdateWorkerThread(std::unique_lock<std::mutex>& lock) {
   assert(lock.owns_lock());
-  if (!m_idle) {
+  if (!Idle()) {
     return;
   }
 
@@ -209,7 +225,7 @@ void ThreadPoolExecutor::ThreadPoolWorker::UpdateWorkerThread(std::unique_lock<s
       EventLoop();
   });
 
-  m_idle = false;
+  m_idle.store(false);
   lock.unlock();
 
   if (prev_worker.joinable()) {
@@ -217,8 +233,13 @@ void ThreadPoolExecutor::ThreadPoolWorker::UpdateWorkerThread(std::unique_lock<s
   }
 }
 
-ThreadPoolExecutor::ThreadPoolExecutor(std::size_t pool_size)
+ThreadPoolExecutor::ThreadPoolExecutor(int pool_size)
   : AsyncExecutor(), m_pool_size(pool_size), m_round_robin_index(0) {
+  m_workers.reserve(pool_size);
+
+  for (int i = 0; i < pool_size; i++) {
+    m_workers.emplace_back(shared_from_this(), i);
+  }
 }
 
 ThreadPoolExecutor::~ThreadPoolExecutor() {
@@ -226,13 +247,13 @@ ThreadPoolExecutor::~ThreadPoolExecutor() {
 }
 
 void ThreadPoolExecutor::Enqueue(const callback_t callback) {
-  std::size_t idle_worker_index = FindIdleWorker();
-  if (idle_worker_index < PoolSize()) {
+  int idle_worker_index = FindIdleWorker();
+  if (idle_worker_index != -1) {
     m_workers[idle_worker_index].Enqueue(std::move(callback));
     return;
   }
 
-  std::size_t next_worker_index = RoundRobinNext();
+  int next_worker_index = RoundRobinNext();
   m_workers[next_worker_index].Enqueue(std::move(callback));
 }
 
@@ -247,41 +268,37 @@ void ThreadPoolExecutor::Shutdown() {
   }
 }
 
-std::size_t ThreadPoolExecutor::PoolSize() const {
+int ThreadPoolExecutor::PoolSize() const {
   return m_pool_size;
 }
 
-ThreadPoolExecutor::ThreadPoolWorker& ThreadPoolExecutor::Worker(std::size_t index) {
+ThreadPoolExecutor::ThreadPoolWorker& ThreadPoolExecutor::Worker(int index) {
   if (index >= PoolSize()) {
     throw std::out_of_range("Worker index out of bounds");
   }
   return m_workers[index];
 }
 
-std::size_t ThreadPoolExecutor::FindIdleWorker() const {
-  for (std::size_t i = 0; i < PoolSize(); i++) {
-    if (m_idle_markers[i].load()) {
+int ThreadPoolExecutor::FindIdleWorker() const {
+  for (int i = 0; i < PoolSize(); i++) {
+    if (m_workers[i].Idle()) {
       return i;
     }
   }
-  return SIZE_MAX;
+  return -1;
 }
 
-std::vector<std::size_t> ThreadPoolExecutor::FindIdleWorkers(std::size_t thread_count) const {
-  std::vector<std::size_t> idle_workers;
+std::vector<int> ThreadPoolExecutor::FindIdleWorkers(int thread_count) const {
+  std::vector<int> idle_workers;
   for (int i = 0; i < PoolSize() && idle_workers.size() < thread_count; i++) {
-    if (m_idle_markers[i].load()) {
+    if (m_workers[i].Idle()) {
       idle_workers.push_back(i);
     }
   }
   return idle_workers;
 }
 
-void ThreadPoolExecutor::SetWorkerActivity(std::size_t index, bool is_active) {
-  m_idle_markers[index].store(is_active);
-}
-
-std::size_t ThreadPoolExecutor::RoundRobinNext() {
+int ThreadPoolExecutor::RoundRobinNext() {
   return m_round_robin_index.fetch_add(1) % PoolSize();
 }
 
