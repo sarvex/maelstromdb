@@ -121,7 +121,7 @@ private:
   void PersistMetadata(const std::string& metadata_path);
   void PersistLogEntries(const std::vector<protocol::log::LogEntry>& new_entries);
 
-  protocol::log::LogMetadata LoadMetadata(const std::string& metadata_path) const;
+  void LoadMetadata(const std::string& metadata_path);
   std::vector<Page::Record> LoadLogEntries(const std::string& log_path) const;
 
   void CreateOpenFile();

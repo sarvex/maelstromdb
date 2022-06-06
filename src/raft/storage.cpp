@@ -350,7 +350,7 @@ std::vector<PersistedLog::Page::Record> PersistedLog::LoadLogEntries(const std::
   return log_entries;
 }
 
-protocol::log::LogMetadata PersistedLog::LoadMetadata(const std::string& metadata_path) const {
+void PersistedLog::LoadMetadata(const std::string& metadata_path) {
   std::fstream in(metadata_path, std::ios::in | std::ios::binary);
 
   google::protobuf::io::IstreamInputStream metadata_stream(&in);
@@ -364,7 +364,7 @@ protocol::log::LogMetadata PersistedLog::LoadMetadata(const std::string& metadat
 
   Logger::Debug("Restored metadata from disk, term =", metadata.term(), "vote =", metadata.vote());
 
-  return metadata;
+  SetMetadata(metadata);
 }
 
 void PersistedLog::CreateOpenFile() {
