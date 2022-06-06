@@ -23,6 +23,7 @@ void ConcensusModule::StateMachineInit(int delay) {
     m_match_index[peer] = -1;
   }
 
+  // Restore raft metadata from disk if restarting node after server failure
   auto [metadata, is_valid] = m_ctx.LogInstance()->Metadata();
   if (is_valid) {
     m_term.store(metadata.term());
@@ -65,6 +66,7 @@ void ConcensusModule::ElectionCallback(const int term) {
   m_state.store(RaftState::CANDIDATE);
   m_term++;
   int saved_term = Term();
+  // Once a node becomes a CANDIDATE it votes for itself
   m_vote = m_ctx.address;
   m_votes_received = 1;
 
@@ -82,6 +84,7 @@ void ConcensusModule::ElectionCallback(const int term) {
         last_log_term);
   }
 
+  // Start a new election if the node does not get a majority of votes within time limit
   ScheduleElection(saved_term);
 }
 
@@ -92,29 +95,33 @@ void ConcensusModule::HeartbeatCallback() {
   }
 
   int saved_term = Term();
-
-  int prev_log_index = 0;
-  int prev_log_term = 0;
-  int leader_commit = 0;
   for (auto peer_id:m_ctx.peer_ids) {
     Logger::Debug("Sending AppendEntries rpc to", peer_id);
+
+    int next = m_next_index[peer_id];
+    int prev_log_index = next - 1;
+    int prev_log_term = -1;
+    if (prev_log_index >= 0) {
+      prev_log_term = m_ctx.LogInstance()->Entry(prev_log_index).term();
+    }
 
     m_ctx.ClientInstance()->AppendEntries(
         peer_id,
         saved_term,
         prev_log_index,
         prev_log_term,
-        leader_commit);
+        m_commit_index.load());
   }
 
   ScheduleHeartbeat();
 }
 
 void ConcensusModule::ScheduleElection(const int term) {
-  std::random_device rd; // obtain a random number from hardware
-  std::mt19937 gen(rd()); // seed the generator
+  std::random_device rd; // Obtain a random number from hardware
+  std::mt19937 gen(rd()); // Seed the generator
   std::uniform_int_distribution<> distr(150, 300);
   int random_timeout = distr(gen);
+
   Logger::Debug("Election timer created:", random_timeout, "ms");
   m_election_timer->Reset(
       std::bind(&ConcensusModule::ElectionCallback, this, term),
@@ -143,8 +150,10 @@ void ConcensusModule::ResetToFollower(const int term) {
 
   m_heartbeat_timer->Cancel();
 
+  // Since term/vote of node is modified, changes must be persisted to disk
   StoreState();
 
+  // FOLLOWER will start an election if it doesn't receive heartbeat from LEADER
   ScheduleElection(term);
 }
 
@@ -187,6 +196,8 @@ std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::
   auto last_log_index = m_ctx.LogInstance()->LastLogIndex();
   auto last_log_term = m_ctx.LogInstance()->LastLogTerm();
 
+  // Vote can only be granted if node hasn't voted for a different node and entries in raft log
+  // must be valid
   if (request.term() == Term() &&
       (m_vote == "" || m_vote == request.candidateid()) &&
       (request.lastlogterm() > last_log_term ||
@@ -220,6 +231,7 @@ void ConcensusModule::ProcessRequestVoteServerResponse(
     if (reply.votegranted()) {
       m_votes_received++;
 
+      // If CANDIDATE receives majority of votes it becomes the new leader
       if (CheckQuorum(m_votes_received)) {
         Logger::Debug("Wins election with", m_votes_received, "votes");
         PromoteToLeader();
@@ -250,6 +262,7 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
       ScheduleElection(request.term());
     }
 
+    // Verify that the two logs agree at prevLogIndex
     if (request.prevlogindex() == -1 ||
         (request.prevlogindex() < m_ctx.LogInstance()->LogSize() &&
          request.prevlogterm() == m_ctx.LogInstance()->Entry(request.prevlogindex()).term())) {
@@ -265,16 +278,19 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
           log_insert_index++;
           new_entries_index++;
         } else {
+          // If the two logs do not agree at an index, N, all indices >= N are deleted
           m_ctx.LogInstance()->TruncateSuffix(log_insert_index);
           break;
         }
       }
 
+      // Append entries from the request that have not been replicated to the raft log
       if (new_entries_index < request.entries().size()) {
         std::vector<protocol::log::LogEntry> new_entries(request.entries().begin() + new_entries_index, request.entries().end());
         m_ctx.LogInstance()->Append(new_entries);
       }
 
+      // Commits log entries that have committed by the LEADER
       if (request.leadercommit() > m_commit_index) {
         int new_commit_index = std::min((int)request.leadercommit(), m_ctx.LogInstance()->LogSize());
         m_commit_index.store(new_commit_index);
@@ -312,6 +328,7 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
   if (State() == RaftState::LEADER && reply.term() == Term()) {
     int next = m_next_index[address];
     if (reply.success()) {
+      // Update next and match index since all entries in request were replicated on FOLLOWER
       m_next_index[address] = next + request.entries().size();
       m_match_index[address] = next + request.entries().size() - 1;
       Logger::Debug("AppendEntries reply from", address, "successful: next_index =", m_next_index[address], "match_index =", m_match_index[address]);
@@ -329,6 +346,7 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
             }
           }
 
+          // Once a majority of nodes have replicated a log entry, it can be committed
           if (CheckQuorum(match_count)) {
             new_commit_index = i;
           }
@@ -350,10 +368,12 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
         m_last_applied.store(new_last_applied);
 
         // TODO: Commit new uncommited entries
-      } else {
-        m_next_index[address] = next - 1;
-        Logger::Debug("AppendEntries reply from", address, "unsuccessful: next_index =", next);
       }
+    } else {
+      // If the AppendEntries RPC was unsuccessful the prevLogIndex for the specific node is decremented.
+      // This will continue until a raft log entry with a matching term is found.
+      m_next_index[address] = next - 1;
+      Logger::Debug("AppendEntries reply from", address, "unsuccessful: next_index =", next);
     }
   }
 }
