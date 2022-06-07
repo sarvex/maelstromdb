@@ -24,6 +24,7 @@ PersistedLog::Page::Page(
   , log_entries({})
   , max_file_size(max_file_size) {
   std::string file_path = dir + filename;
+  // Create a file for the new page
   std::fstream out(file_path, std::ios::out | std::ios::binary);
 }
 
@@ -54,11 +55,13 @@ PersistedLog::Page::Record::Record(int offset, protocol::log::LogEntry entry)
 }
 
 void PersistedLog::Page::Close() {
+  // If the page is already closed break
   if (!is_open) {
     return;
   }
   is_open = false;
 
+  // Delete the file if there are no entries in the file
   if (start_index == end_index) {
     std::filesystem::remove(dir + filename);
     return;
@@ -74,6 +77,7 @@ int PersistedLog::Page::RemainingSpace() const {
 }
 
 bool PersistedLog::Page::WriteLogEntry(std::fstream& file, const protocol::log::LogEntry& new_entry) {
+  // Note that the result isn't flushed to disk so that writes can be batched
   bool success = google::protobuf::util::SerializeDelimitedToOstream(new_entry, &file);
   if (success) {
     log_entries.push_back(Page::Record(byte_offset, new_entry));
@@ -87,7 +91,7 @@ void PersistedLog::Page::TruncateSuffix(int removal_index) {
   int last_record_index = removal_index - start_index;
   int truncate_offset = log_entries[last_record_index].offset;
 
-  Logger::Debug(truncate_offset);
+  // Resizing file sets data past offset to zeroes
   std::filesystem::resize_file(dir + filename, truncate_offset);
 
   log_entries.erase(
@@ -123,7 +127,10 @@ PersistedLog::PersistedLog(
   , m_file_executor(std::make_shared<core::Strand>()) {
   std::filesystem::create_directories(parent_dir);
 
+  // Restores raft metadata and log entries from disk after recovering from server failure
   RestoreState();
+  // If there were no log entries to restore a new open page must be created to store new
+  // log entries
   if (!m_open_page) {
     m_open_page = std::make_shared<Page>(0, parent_dir, true, max_file_size);
     m_log_indices.insert({0, m_open_page});
@@ -157,11 +164,12 @@ int PersistedLog::LastLogTerm() const {
 }
 
 protocol::log::LogEntry PersistedLog::Entry(const int idx) const {
-  if (idx > LastLogIndex()) {
+  if (idx > LastLogIndex() || idx < 0) {
     Logger::Error("Raft log index out of bounds, index =", idx, "last_log_index =", LastLogIndex());
     throw std::out_of_range("Raft log index out of bounds");
   }
 
+  // Upper bound gets page with start_index > idx so that previous page in map is correct page
   auto it = m_log_indices.upper_bound(idx);
   it--;
   const auto& page = it->second;
@@ -169,7 +177,7 @@ protocol::log::LogEntry PersistedLog::Entry(const int idx) const {
 }
 
 std::vector<protocol::log::LogEntry> PersistedLog::Entries(int start, int end) const {
-  if (start > end || end > LastLogIndex() + 1) {
+  if (start > end || end > LastLogIndex() + 1 || start < 0) {
     Logger::Error("Raft log slice query invalid, start =", start, "end =", end, "last_log_index =", LastLogIndex());
     throw std::out_of_range("Raft log slice query invalid");
   }
@@ -177,17 +185,22 @@ std::vector<protocol::log::LogEntry> PersistedLog::Entries(int start, int end) c
   std::vector<Page::Record> query_records;
   int curr = start;
   while (curr < end) {
+    // Upper bound gets page with start_index > idx so that previous page in map is correct page
     auto it = m_log_indices.upper_bound(curr);
     it--;
     const auto& page = it->second;
 
+    // Prevent start - page->start_index from being negative to prevent indexing out of bounds
     start = start >= page->start_index ? start - page->start_index : 0;
+    // If end is inside the upper range then entries in [start, end - start_index) must be retrieved
+    // If end is outside the upper range then entries in [start, end) are retrieved
     if (page->end_index >= end) {
       query_records.insert(query_records.end(), page->log_entries.begin() + start, page->log_entries.begin() + end - page->start_index);
     } else {
       query_records.insert(query_records.end(), page->log_entries.begin() + start, page->log_entries.end());
     }
 
+    // The end index matches the start index of the next page
     curr = page->end_index;
   }
 
@@ -261,11 +274,13 @@ bool PersistedLog::Empty(const std::string& path) const {
 }
 
 bool PersistedLog::IsFileOpen(const std::string& filename) const {
+  // Only 1 file is ever open and it has `open` as a prefix 
   return filename.substr(0, 4) == "open";
 }
 
 void PersistedLog::RestoreState() {
   auto file_list = ListDirectoryContents(m_dir);
+  // Sorting files makes unit testing easier
   std::sort(file_list.begin(), file_list.end());
   for (const auto& filename:file_list) {
     std::string file_path = m_dir + filename;
@@ -284,10 +299,13 @@ void PersistedLog::RestoreState() {
       m_open_page->end_index = m_open_page->start_index + restored_entries.size();
       m_open_page->log_entries = std::move(restored_entries);
     } else {
+      // Since closed file name is of form `start-end` the start index can be determined using
+      // the prefix of the filename
       int dash_index = filename.find('-');
       int start = std::stoi(filename.substr(0, dash_index));
       auto closed_page = std::make_shared<Page>(start, m_dir, false, m_max_file_size);
 
+      // Restore log data in memory
       m_log_size += restored_entries.size();
       m_log_indices.insert({start, closed_page});
 
@@ -314,6 +332,7 @@ void PersistedLog::PersistLogEntries(const std::vector<protocol::log::LogEntry>&
 
   bool success = true;
   for (auto &entry:new_entries) {
+    // If there is no space remaining in current open file open a new file
     if (entry.ByteSizeLong() > m_open_page->RemainingSpace()) {
       CreateOpenFile();
       out.close();
@@ -330,6 +349,8 @@ void PersistedLog::PersistLogEntries(const std::vector<protocol::log::LogEntry>&
 
     m_log_size++;
   }
+
+  // Write all entries to write buffer before flushing to improve throughput
   out.flush();
 }
 
@@ -372,7 +393,6 @@ void PersistedLog::CreateOpenFile() {
 
   m_open_page = std::make_shared<Page>(LogSize(), m_dir, true, m_max_file_size);
   m_log_indices.insert({m_open_page->start_index, m_open_page});
-
 }
 
 }
