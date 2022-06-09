@@ -55,7 +55,6 @@ PersistedLog::Page::Record::Record(int offset, protocol::log::LogEntry entry)
 }
 
 void PersistedLog::Page::Close() {
-  // If the page is already closed break
   if (!is_open) {
     return;
   }
@@ -141,9 +140,15 @@ std::tuple<protocol::log::LogMetadata, bool> PersistedLog::Metadata() const {
   return m_metadata;
 }
 
-void PersistedLog::SetMetadata(const protocol::log::LogMetadata& metadata) {
+void PersistedLog::SetMetadata(protocol::log::LogMetadata& metadata) {
+  metadata.set_version(metadata.version() + 1);
   m_metadata = std::make_tuple(metadata, true);
   std::string metadata_path = m_dir + "metadata";
+  if (std::get<0>(m_metadata).version() % 2 == 0) {
+    metadata_path += "1";
+  } else {
+    metadata_path += "2";
+  }
   PersistMetadata(metadata_path);
 }
 
@@ -284,7 +289,7 @@ void PersistedLog::RestoreState() {
   std::sort(file_list.begin(), file_list.end());
   for (const auto& filename:file_list) {
     std::string file_path = m_dir + filename;
-    if (filename == "metadata") {
+    if (filename == "metadata1" || filename == "metadata2") {
       LoadMetadata(file_path);
       continue;
     }
@@ -383,9 +388,14 @@ void PersistedLog::LoadMetadata(const std::string& metadata_path) {
     throw std::runtime_error("Unable to restore metadata");
   }
 
+  // Retrieve the metadata with the higher version number
+  if (std::get<1>(m_metadata) && metadata.version() < std::get<0>(m_metadata).version()) {
+    return;
+  }
+
   Logger::Debug("Restored metadata from disk, term =", metadata.term(), "vote =", metadata.vote());
 
-  SetMetadata(metadata);
+  m_metadata = std::make_tuple(metadata, true);
 }
 
 void PersistedLog::CreateOpenFile() {

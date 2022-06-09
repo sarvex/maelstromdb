@@ -40,7 +40,7 @@ public:
    *
    * @param metadata contains the current term and vote for the node
    */
-  virtual void SetMetadata(const protocol::log::LogMetadata& metadata) = 0;
+  virtual void SetMetadata(protocol::log::LogMetadata& metadata) = 0;
 
   /**
    * Getter for raft log size.
@@ -117,7 +117,7 @@ public:
       const int max_file_size = 1024*8);
 
   std::tuple<protocol::log::LogMetadata, bool> Metadata() const override;
-  void SetMetadata(const protocol::log::LogMetadata& metadata) override;
+  void SetMetadata(protocol::log::LogMetadata& metadata) override;
 
   int LogSize() const override;
 

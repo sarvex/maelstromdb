@@ -36,15 +36,15 @@ protected:
   int entry_count;
 };
 
-class SetMetadataTest : public ::testing::Test {
+class MetadataTest : public ::testing::Test {
 protected:
-  SetMetadataTest() {
+  MetadataTest() {
     Logger::SetLevel(Logger::LogLevel::DEBUG);
     log = std::make_unique<PersistedLog>(
         std::filesystem::current_path().string() + "/test_log/");
   }
 
-  ~SetMetadataTest() {
+  ~MetadataTest() {
     std::filesystem::remove_all(std::filesystem::current_path().string() + "/test_log");
   }
 
@@ -59,11 +59,11 @@ protected:
   }
 };
 
-class RestoreStateTest : public LogTestBase {
+class RestoreLogTest : public LogTestBase {
 protected:
   void SetUp(const int count, const int max_file_size = 1024*8) {
     LogTestBase::SetUp(count, max_file_size);
-
+    
     log.reset(new PersistedLog(
           std::filesystem::current_path().string() + "/test_log/",
           max_file_size));
@@ -89,23 +89,51 @@ protected:
   }
 };
 
-TEST_F(SetMetadataTest, HandlesNoDataOnDisk) {
+TEST_F(MetadataTest, HandlesNoMetadata) {
   auto [_, valid] = log->Metadata();
 
   ASSERT_FALSE(valid);
 }
 
-TEST_F(SetMetadataTest, ValidateMetadataOnDisk) {
+TEST_F(MetadataTest, ValidateMetadataInMemory) {
   test_metadata.set_term(4);
   test_metadata.set_vote("peer1");
   log->SetMetadata(test_metadata);
 
-  // Verify that when data is restored from disk that the metadata has not changed
+  // Overwrite previous metadata with new term
+  test_metadata.set_term(5);
+  log->SetMetadata(test_metadata);
+
   auto [result_metadata, valid] = log->Metadata();
 
   ASSERT_TRUE(valid);
   EXPECT_EQ(test_metadata.term(), result_metadata.term());
   EXPECT_EQ(test_metadata.vote(), result_metadata.vote());
+  EXPECT_EQ(2, result_metadata.version());
+}
+
+TEST_F(MetadataTest, ValidateMetadataOnDisk) {
+  test_metadata.set_term(4);
+  test_metadata.set_vote("peer1");
+  log->SetMetadata(test_metadata);
+
+  test_metadata.set_term(5);
+  test_metadata.set_vote("peer2");
+  log->SetMetadata(test_metadata);
+
+  test_metadata.set_term(6);
+  test_metadata.set_vote("peer3");
+  log->SetMetadata(test_metadata);
+
+  // Calling constructor causes data to be restored from disk
+  log.reset(new PersistedLog(
+        std::filesystem::current_path().string() + "/test_log/"));
+  auto [result_metadata, valid] = log->Metadata();
+
+  ASSERT_TRUE(valid);
+  EXPECT_EQ(test_metadata.term(), result_metadata.term());
+  EXPECT_EQ(test_metadata.vote(), result_metadata.vote());
+  EXPECT_EQ(3, result_metadata.version());
 }
 
 TEST_F(AppendTest, ValidateSingleFileEntries) {
@@ -150,7 +178,7 @@ TEST_F(AppendTest, ValidateMultipleFileEntries) {
   }
 }
 
-TEST_F(RestoreStateTest, HandlesSingleFilePersistence) {
+TEST_F(RestoreLogTest, HandlesSingleFilePersistence) {
   SetUp(3);
 
   // Verify that entries persisted to disk have not been altered since insertion
@@ -170,7 +198,7 @@ TEST_F(RestoreStateTest, HandlesSingleFilePersistence) {
   }
 }
 
-TEST_F(RestoreStateTest, HandlesMultipleFilePersistence) {
+TEST_F(RestoreLogTest, HandlesMultipleFilePersistence) {
   SetUp(8, 25);
 
   // Verify that entries persisted to disk have not been altered since insertion

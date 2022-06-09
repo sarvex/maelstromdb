@@ -2,13 +2,20 @@ syntax = "proto3";
 
 package protocol.log;
 
+enum LogOpCode {
+  NO_OP = 0;
+  CONFIGURATION = 1;
+  DATA = 2;
+}
+
 message LogEntry {
   int64 term = 1;
   bytes data = 2;
 }
 
 message LogMetadata {
-  int64 term = 1;
-  string vote = 2;
+  int64 version = 1;
+  int64 term = 2;
+  string vote = 3;
 }
 
