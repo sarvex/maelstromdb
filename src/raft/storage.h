@@ -11,7 +11,6 @@
 #include <fstream>
 #include <map>
 #include <string>
-#include <tuple>
 #include <vector>
 
 #include "async_executor.h"
@@ -30,10 +29,11 @@ public:
   /**
    * Getter for raft metadata.
    *
+   * @param[out] metadata the placeholder where the current metadata is written to
    * @returns metadata containing node's previous term and vote. Boolean is used
-   *    to indicate whether the metadata is null.
+   *    to indicate whether the metadata is empty.
    */
-  virtual std::tuple<protocol::log::LogMetadata, bool> Metadata() const = 0;
+  virtual bool Metadata(protocol::log::LogMetadata& metadata) const = 0;
 
   /**
    * Setter for raft metadata.
@@ -105,9 +105,9 @@ protected:
   /**
    * Term and vote data of node. This is persisted to disk everytime there is a
    * modification so that the node can catch up after recovering from a server
-   * failure.
+   * failure. If the version number is 0 then the metadata has not been set.
    */
-  std::tuple<protocol::log::LogMetadata, bool> m_metadata;
+  protocol::log::LogMetadata m_metadata;
 };
 
 class PersistedLog : public Log {
@@ -116,7 +116,7 @@ public:
       const std::string& parent_dir,
       const int max_file_size = 1024*8);
 
-  std::tuple<protocol::log::LogMetadata, bool> Metadata() const override;
+  bool Metadata(protocol::log::LogMetadata& metadata) const override;
   void SetMetadata(protocol::log::LogMetadata& metadata) override;
 
   int LogSize() const override;

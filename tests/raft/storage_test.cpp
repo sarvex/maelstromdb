@@ -90,7 +90,7 @@ protected:
 };
 
 TEST_F(MetadataTest, HandlesNoMetadata) {
-  auto [_, valid] = log->Metadata();
+  bool valid = log->Metadata(test_metadata);
 
   ASSERT_FALSE(valid);
 }
@@ -104,7 +104,8 @@ TEST_F(MetadataTest, ValidateMetadataInMemory) {
   test_metadata.set_term(5);
   log->SetMetadata(test_metadata);
 
-  auto [result_metadata, valid] = log->Metadata();
+  protocol::log::LogMetadata result_metadata;
+  bool valid = log->Metadata(result_metadata);
 
   ASSERT_TRUE(valid);
   EXPECT_EQ(test_metadata.term(), result_metadata.term());
@@ -128,7 +129,8 @@ TEST_F(MetadataTest, ValidateMetadataOnDisk) {
   // Calling constructor causes data to be restored from disk
   log.reset(new PersistedLog(
         std::filesystem::current_path().string() + "/test_log/"));
-  auto [result_metadata, valid] = log->Metadata();
+  protocol::log::LogMetadata result_metadata;
+  bool valid = log->Metadata(result_metadata);
 
   ASSERT_TRUE(valid);
   EXPECT_EQ(test_metadata.term(), result_metadata.term());

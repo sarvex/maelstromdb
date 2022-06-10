@@ -24,7 +24,8 @@ void ConcensusModule::StateMachineInit(int delay) {
   }
 
   // Restore raft metadata from disk if restarting node after server failure
-  auto [metadata, is_valid] = m_ctx.LogInstance()->Metadata();
+  protocol::log::LogMetadata metadata;
+  bool is_valid = m_ctx.LogInstance()->Metadata(metadata);
   if (is_valid) {
     m_term.store(metadata.term());
     m_vote = metadata.vote();

@@ -24,7 +24,6 @@ PersistedLog::Page::Page(
   , log_entries({})
   , max_file_size(max_file_size) {
   std::string file_path = dir + filename;
-  // Create a file for the new page
   std::fstream out(file_path, std::ios::out | std::ios::binary);
 }
 
@@ -136,15 +135,18 @@ PersistedLog::PersistedLog(
   }
 }
 
-std::tuple<protocol::log::LogMetadata, bool> PersistedLog::Metadata() const {
-  return m_metadata;
+bool PersistedLog::Metadata(protocol::log::LogMetadata& metadata) const {
+  metadata.set_term(m_metadata.term());
+  metadata.set_vote(m_metadata.vote());
+  metadata.set_version(m_metadata.version());
+  return metadata.version() != 0;
 }
 
 void PersistedLog::SetMetadata(protocol::log::LogMetadata& metadata) {
-  metadata.set_version(metadata.version() + 1);
-  m_metadata = std::make_tuple(metadata, true);
+  metadata.set_version(m_metadata.version() + 1);
+  m_metadata = metadata;
   std::string metadata_path = m_dir + "metadata";
-  if (std::get<0>(m_metadata).version() % 2 == 0) {
+  if (m_metadata.version() % 2 == 0) {
     metadata_path += "1";
   } else {
     metadata_path += "2";
@@ -323,7 +325,7 @@ void PersistedLog::RestoreState() {
 void PersistedLog::PersistMetadata(const std::string& metadata_path) {
   std::fstream out(metadata_path, std::ios::out | std::ios::trunc | std::ios::binary);
 
-  bool success = google::protobuf::util::SerializeDelimitedToOstream(std::get<0>(m_metadata), &out);
+  bool success = google::protobuf::util::SerializeDelimitedToOstream(m_metadata, &out);
   if (!success) {
     Logger::Error("Unexpected serialization failure when persisting raft metadata to disk");
     throw std::runtime_error("Unable to serialize raft metadata");
@@ -389,13 +391,13 @@ void PersistedLog::LoadMetadata(const std::string& metadata_path) {
   }
 
   // Retrieve the metadata with the higher version number
-  if (std::get<1>(m_metadata) && metadata.version() < std::get<0>(m_metadata).version()) {
+  if (metadata.version() < m_metadata.version()) {
     return;
   }
 
   Logger::Debug("Restored metadata from disk, term =", metadata.term(), "vote =", metadata.vote());
 
-  m_metadata = std::make_tuple(metadata, true);
+  m_metadata = metadata;
 }
 
 void PersistedLog::CreateOpenFile() {
