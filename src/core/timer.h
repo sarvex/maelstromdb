@@ -93,7 +93,14 @@ private:
 
 class TimerQueue : public std::enable_shared_from_this<TimerQueue> {
 public:
+  enum class TimerEventType {
+    ADD,
+    REMOVE
+  };
+
+  using event_queue = std::vector<std::pair<std::shared_ptr<TimerEvent>, TimerEventType>>;
   using timer_set = std::multiset<std::shared_ptr<TimerEvent>>;
+
 public:
   TimerQueue();
 
@@ -115,12 +122,16 @@ public:
 private:
   void EventLoop();
 
-  TimerEvent::time_point ProcessTimers();
+  TimerEvent::time_point ProcessTimers(event_queue& events);
+
+  void AddTimerInternal(std::shared_ptr<TimerEvent> new_timer);
+
+  void RemoveTimerInternal(std::shared_ptr<TimerEvent> existing_timer);
 
   std::thread UpdateWorkerThread(std::unique_lock<std::mutex>& lock);
 
 private:
-  timer_set m_request_queue;
+  event_queue m_request_queue;
   timer_set m_process_queue;
   std::mutex m_lock;
   std::atomic<bool> m_abort;

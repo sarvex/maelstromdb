@@ -141,7 +141,7 @@ void TimerQueue::AddTimer(std::shared_ptr<TimerEvent> timer) {
 
   auto prev_thread = UpdateWorkerThread(lock);
   
-  m_request_queue.insert(std::move(timer));
+  m_request_queue.push_back({std::move(timer), TimerEventType::ADD});
   lock.unlock();
 
   m_cond.notify_one();
@@ -154,12 +154,10 @@ void TimerQueue::AddTimer(std::shared_ptr<TimerEvent> timer) {
 void TimerQueue::RemoveTimer(std::shared_ptr<TimerEvent> timer) {
   std::unique_lock<std::mutex> lock(m_lock);
 
-  auto timer_it = m_request_queue.find(timer);
-  if (timer_it == m_request_queue.end()) {
-    return;
-  }
+  m_request_queue.push_back({std::move(timer), TimerEventType::REMOVE});
+  lock.unlock();
 
-  m_request_queue.erase(timer_it);
+  m_cond.notify_one();
 }
 
 void TimerQueue::Shutdown() {
@@ -204,14 +202,25 @@ void TimerQueue::EventLoop() {
       return;
     }
 
-    m_process_queue.merge(std::move(m_request_queue));
+    auto request_queue = std::move(m_request_queue);
     lock.unlock();
 
-    next_deadline = ProcessTimers();
+    next_deadline = ProcessTimers(request_queue);
   }
 }
 
-TimerEvent::time_point TimerQueue::ProcessTimers() {
+TimerEvent::time_point TimerQueue::ProcessTimers(event_queue& events) {
+  for (auto& event:events) {
+    auto& timer = event.first;
+    auto event_type = event.second;
+
+    if (event_type == TimerEventType::ADD) {
+      AddTimerInternal(std::move(timer));
+    } else {
+      RemoveTimerInternal(std::move(timer));
+    }
+  }
+
   const auto curr_time = TimerEvent::clock_type::now();
   timer_set temp_set;
 
@@ -237,10 +246,22 @@ TimerEvent::time_point TimerQueue::ProcessTimers() {
   }
 
   if (m_process_queue.empty()) {
-    return curr_time + std::chrono::seconds(10);
+    return curr_time + std::chrono::seconds(5);
   }
 
   return (*m_process_queue.begin())->Deadline();
+}
+
+void TimerQueue::AddTimerInternal(std::shared_ptr<TimerEvent> new_timer) {
+  m_process_queue.emplace(std::move(new_timer));
+}
+
+void TimerQueue::RemoveTimerInternal(std::shared_ptr<TimerEvent> existing_timer) {
+  auto timer_it = m_process_queue.find(existing_timer);
+  if (timer_it == m_process_queue.end()) {
+    return;
+  }
+  m_process_queue.erase(timer_it);
 }
 
 std::thread TimerQueue::UpdateWorkerThread(std::unique_lock<std::mutex>& lock) {
