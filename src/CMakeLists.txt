@@ -35,6 +35,7 @@ add_library(maelstromdb_lib
   raft/raft_client.cpp
   raft/raft_server.cpp
   raft/storage.cpp
+  raft/cluster_configuration.cpp
   core/async_executor.cpp
   core/timer.cpp
   utils/logger.cpp)
@@ -50,9 +51,9 @@ target_include_directories(maelstromdb_lib
   utils
   "${CMAKE_BINARY_DIR}/protogen")
 
-add_executable(maelstromdb
-  raft_node.cpp)
-target_link_libraries(maelstromdb
+add_executable(maelstrom
+  maelstrom.cpp)
+target_link_libraries(maelstrom
   maelstromdb_lib)
 
 

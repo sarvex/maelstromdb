@@ -8,19 +8,21 @@
 #include "raft_server.h"
 
 int main(int argc, char* argv[]) {
-  Logger::SetLevel(Logger::LogLevel::DEBUG);
-  Logger::Info("Initializing...");
-
   std::string address(argv[1]);
   std::vector<std::string> peer_ids{};
   for (int i = 2; i < argc; i++) {
     peer_ids.push_back(argv[i]);
   }
 
-  raft::GlobalCtxManager ctx(address, peer_ids);
-  ctx.ConcensusInstance()->StateMachineInit(2);
+  Logger::SetLevel(Logger::LogLevel::DEBUG);
+  Logger::SetLogConsole();
 
-  ctx.ClientInstance()->ClientInit();
+  Logger::Info("Initializing...");
+
+  raft::GlobalCtxManager ctx(address);
+  ctx.ConcensusInstance()->StateMachineInit(2);
+  ctx.ConcensusInstance()->InitializeConfiguration(peer_ids);
+
   std::thread client_worker = std::thread(&raft::RaftClient::AsyncCompleteRPC, ctx.ClientInstance());
 
   ctx.ServerInstance()->ServerInit();

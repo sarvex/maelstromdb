@@ -1,4 +1,5 @@
 #include "global_ctx_manager.h"
+#include "cluster_configuration.h"
 #include "concensus_module.h"
 #include "raft_client.h"
 #include "raft_server.h"
@@ -6,11 +7,8 @@
 
 namespace raft {
 
-GlobalCtxManager::GlobalCtxManager(
-    const std::string& address,
-    const std::vector<std::string>& peer_ids)
+GlobalCtxManager::GlobalCtxManager(const std::string& address)
   : address(address)
-  , peer_ids(peer_ids)
   , m_concensus(std::make_shared<ConcensusModule>(*this))
   , m_client(std::make_shared<RaftClient>(*this))
   , m_server(std::make_shared<RaftServer>(*this))

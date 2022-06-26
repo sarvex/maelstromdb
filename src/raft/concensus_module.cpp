@@ -14,22 +14,38 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_last_applied(-1)
   , m_commit_index(-1)
   , m_leader_id("")
-  , m_timer_executor(std::make_shared<core::Strand>()) {
+  , m_configuration(std::make_unique<ClusterConfiguration>())
+  , m_timer_executor(std::make_shared<core::Strand>())
+  , m_election_deadline(clock_type::now()) {
 }
 
 void ConcensusModule::StateMachineInit(int delay) {
-  for (auto peer:m_ctx.peer_ids) {
+  // Restore raft metadata from disk if restarting node after server failure
+  protocol::log::LogMetadata metadata;
+  bool ok = m_ctx.LogInstance()->Metadata(metadata);
+  if (ok) {
+    m_term.store(metadata.term());
+    m_vote = metadata.vote();
+  }
+
+  protocol::log::Configuration configuration;
+  int log_index;
+  std::tie(log_index, ok) = m_ctx.LogInstance()->LatestConfiguration(configuration);
+  if (ok) {
+    Logger::Debug("Restored cluster configuration from disk with id =", log_index);
+    m_configuration->SetConfiguration(log_index, configuration);
+  }
+
+  m_ctx.ClientInstance()->CreateConnections(m_configuration->ServerAddresses());
+
+  for (auto peer:m_configuration->ServerAddresses()) {
+    if (peer == m_ctx.address) {
+      continue;
+    }
     m_next_index[peer] = 0;
     m_match_index[peer] = -1;
   }
 
-  // Restore raft metadata from disk if restarting node after server failure
-  protocol::log::LogMetadata metadata;
-  bool is_valid = m_ctx.LogInstance()->Metadata(metadata);
-  if (is_valid) {
-    m_term.store(metadata.term());
-    m_vote = metadata.vote();
-  }
 
   std::this_thread::sleep_for(std::chrono::seconds(delay));
   m_election_timer = m_ctx.TimerQueueInstance()->CreateTimer(
@@ -41,8 +57,31 @@ void ConcensusModule::StateMachineInit(int delay) {
       m_timer_executor,
       std::bind(&ConcensusModule::HeartbeatCallback, this));
 
-  Logger::Debug("Starting election");
   ScheduleElection(Term());
+}
+
+void ConcensusModule::InitializeConfiguration(std::vector<std::string>& peer_addresses) {
+  if (Term() != 0 ||
+      m_ctx.LogInstance()->LastLogIndex() != -1 ||
+      m_configuration->ServerAddresses().size() > 0) {
+    Logger::Error("Raft log already exists on disk, cannot override existing cluster configuration");
+    return;
+  }
+
+  protocol::log::LogEntry log_entry;
+  protocol::log::Configuration configuration;
+  protocol::log::Server server;
+  server.set_address(m_ctx.address);
+  *configuration.add_prev_configuration() = server;
+  for (auto& address:peer_addresses) {
+    protocol::log::Server peer;
+    peer.set_address(address);
+    *configuration.add_prev_configuration() = peer;
+  }
+  log_entry.set_term(0);
+  log_entry.set_type(protocol::log::CONFIGURATION);
+  *log_entry.mutable_configuration() = configuration;
+  Append(log_entry);
 }
 
 int ConcensusModule::Term() const {
@@ -54,6 +93,8 @@ ConcensusModule::RaftState ConcensusModule::State() const {
 }
 
 void ConcensusModule::ElectionCallback(const int term) {
+  Logger::Debug("Starting election");
+
   if (State() != RaftState::CANDIDATE && State() != RaftState::FOLLOWER) {
     Logger::Debug("Concensus module state invalid for election");
     return;
@@ -75,7 +116,10 @@ void ConcensusModule::ElectionCallback(const int term) {
 
   int last_log_index = 0;
   int last_log_term = 0;
-  for (auto peer_id:m_ctx.peer_ids) {
+  for (auto peer_id:m_configuration->ServerAddresses()) {
+    if (peer_id == m_ctx.address) {
+      continue;
+    }
     Logger::Debug("Sending RequestVote rpc to", peer_id);
 
     m_ctx.ClientInstance()->RequestVote(
@@ -96,7 +140,10 @@ void ConcensusModule::HeartbeatCallback() {
   }
 
   int saved_term = Term();
-  for (auto peer_id:m_ctx.peer_ids) {
+  for (auto peer_id:m_configuration->ServerAddresses()) {
+    if (peer_id == m_ctx.address) {
+      continue;
+    }
     Logger::Debug("Sending AppendEntries rpc to", peer_id);
 
     int next = m_next_index[peer_id];
@@ -106,11 +153,14 @@ void ConcensusModule::HeartbeatCallback() {
       prev_log_term = m_ctx.LogInstance()->Entry(prev_log_index).term();
     }
 
+    auto entries = m_ctx.LogInstance()->Entries(next, m_ctx.LogInstance()->LogSize());
+
     m_ctx.ClientInstance()->AppendEntries(
         peer_id,
         saved_term,
         prev_log_index,
         prev_log_term,
+        entries,
         m_commit_index.load());
   }
 
@@ -127,6 +177,7 @@ void ConcensusModule::ScheduleElection(const int term) {
   m_election_timer->Reset(
       std::bind(&ConcensusModule::ElectionCallback, this, term),
       random_timeout);
+  m_election_timeout = milliseconds(random_timeout);
 }
 
 void ConcensusModule::ScheduleHeartbeat() {
@@ -169,10 +220,6 @@ void ConcensusModule::PromoteToLeader() {
   ScheduleHeartbeat();
 }
 
-bool ConcensusModule::CheckQuorum(const int votes) const {
-  return votes*2 > m_ctx.peer_ids.size() + 1;
-}
-
 void ConcensusModule::StoreState() const {
   protocol::log::LogMetadata metadata;
   metadata.set_term(Term());
@@ -181,12 +228,45 @@ void ConcensusModule::StoreState() const {
   Logger::Debug("Persisted metadata to disk, term =", Term(), "vote =", m_vote);
 }
 
+int ConcensusModule::Append(protocol::log::LogEntry& log_entry) {
+  Logger::Debug("Appending entry to raft log...");
+  int log_index = m_ctx.LogInstance()->Append(log_entry);
+  if (log_entry.has_configuration()) {
+    m_configuration->InsertNewConfiguration(log_index, log_entry.configuration());
+    m_ctx.ClientInstance()->CreateConnections(m_configuration->ServerAddresses());
+  }
+  return log_index;
+}
+
+std::pair<int, int> ConcensusModule::Append(std::vector<protocol::log::LogEntry>& log_entries) {
+  auto [log_start, log_end] = m_ctx.LogInstance()->Append(log_entries);
+  for (int i = 0; i < log_entries.size(); i++) {
+    if (log_entries[i].has_configuration()) {
+      int log_index = log_start + i;
+      m_configuration->InsertNewConfiguration(log_index, log_entries[i].configuration());
+    }
+  }
+  return {log_start, log_end};
+}
+
+void ConcensusModule::CommitEntries(std::vector<protocol::log::LogEntry>& log_entries) {
+  for (int i = 0; i < log_entries.size(); i++) {
+  }
+}
+
 std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::ProcessRequestVoteClientRequest(
     protocol::raft::RequestVote_Request& request) {
   protocol::raft::RequestVote_Response reply;
 
   if (State() == RaftState::DEAD) {
     return std::make_tuple(reply, grpc::Status::CANCELLED);
+  }
+
+  if (clock_type::now() <= m_election_deadline) {
+    Logger::Debug("Rejecting RequestVote RPC, since this node recently received a heartbeat");
+    reply.set_votegranted(false);
+    reply.set_term(Term());
+    return std::make_tuple(reply, grpc::Status::OK);
   }
 
   if (request.term() > Term()) {
@@ -202,7 +282,7 @@ std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::
   if (request.term() == Term() &&
       (m_vote == "" || m_vote == request.candidateid()) &&
       (request.lastlogterm() > last_log_term ||
-       (request.lastlogterm() == last_log_term && request.lastlogindex() >= last_log_index))) {
+      (request.lastlogterm() == last_log_term && request.lastlogindex() >= last_log_index))) {
     reply.set_votegranted(true);
     m_vote = request.candidateid();
     StoreState();
@@ -218,7 +298,8 @@ std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::
 
 void ConcensusModule::ProcessRequestVoteServerResponse(
     protocol::raft::RequestVote_Request& request,
-    protocol::raft::RequestVote_Response& reply) {
+    protocol::raft::RequestVote_Response& reply,
+    const std::string& address) {
   if (State() != RaftState::CANDIDATE) {
     Logger::Debug("Node changed state while waiting for RequestVote reply");
     return;
@@ -233,7 +314,7 @@ void ConcensusModule::ProcessRequestVoteServerResponse(
       m_votes_received++;
 
       // If CANDIDATE receives majority of votes it becomes the new leader
-      if (CheckQuorum(m_votes_received)) {
+      if (m_votes_received*2 > m_configuration->ServerAddresses().size() + 1) {
         Logger::Debug("Wins election with", m_votes_received, "votes");
         PromoteToLeader();
         return;
@@ -261,6 +342,7 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
       ResetToFollower(request.term());
     } else {
       ScheduleElection(request.term());
+      m_election_deadline = clock_type::now() + m_election_timeout;
     }
 
     // Verify that the two logs agree at prevLogIndex
@@ -281,6 +363,7 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
         } else {
           // If the two logs do not agree at an index, N, all indices >= N are deleted
           m_ctx.LogInstance()->TruncateSuffix(log_insert_index);
+          m_configuration->TruncateSuffix(log_insert_index);
           break;
         }
       }
@@ -288,7 +371,7 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
       // Append entries from the request that have not been replicated to the raft log
       if (new_entries_index < request.entries().size()) {
         std::vector<protocol::log::LogEntry> new_entries(request.entries().begin() + new_entries_index, request.entries().end());
-        m_ctx.LogInstance()->Append(new_entries);
+        Append(new_entries);
       }
 
       // Commits log entries that have committed by the LEADER
@@ -306,10 +389,14 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
         }
         m_last_applied.store(new_last_applied);
 
-        // TODO: Commit new uncommited entries
+        CommitEntries(uncommited_entries);
       }
     }
   }
+
+  // Reschedule election since disk write may take up significant time
+  ScheduleElection(request.term());
+  m_election_deadline = clock_type::now() + m_election_timeout;
 
   reply.set_term(Term());
   reply.set_success(success);
@@ -340,15 +427,15 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
       int new_commit_index = saved_commit_index;
       for (int i = saved_commit_index + 1; i < log_size; i++) {
         if (log_entries[i - saved_commit_index - 1].term() == Term()) {
-          int match_count = 1;
-          for (auto peer:m_ctx.peer_ids) {
+          std::unordered_set<std::string> match_peers = {m_ctx.address};
+          for (auto peer:m_configuration->ServerAddresses()) {
             if (m_match_index[peer] >= i) {
-              match_count++;
+              match_peers.insert(peer);
             }
           }
 
           // Once a majority of nodes have replicated a log entry, it can be committed
-          if (CheckQuorum(match_count)) {
+          if (m_configuration->CheckQuorum(match_peers)) {
             new_commit_index = i;
           }
         }
@@ -368,7 +455,24 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
         }
         m_last_applied.store(new_last_applied);
 
-        // TODO: Commit new uncommited entries
+        CommitEntries(uncommited_entries);
+      }
+
+      if (m_commit_index >= m_configuration->Id()) {
+        if (!m_configuration->KnownServer(m_ctx.address)) {
+          Logger::Debug("Committed configuration does not include LEADER, resetting to FOLLOWER...");
+          ResetToFollower(Term() + 1);
+          return;
+        }
+
+        if (m_configuration->State() == ClusterConfiguration::ConfigurationState::JOINT) {
+          protocol::log::LogEntry entry;
+          entry.set_term(Term());
+          entry.set_type(protocol::log::CONFIGURATION);
+          *entry.mutable_configuration()->mutable_prev_configuration() =
+            m_configuration->Configuration().next_configuration();
+          Append(entry);
+        }
       }
     } else {
       // If the AppendEntries RPC was unsuccessful the prevLogIndex for the specific node is decremented.
@@ -377,6 +481,71 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
       Logger::Debug("AppendEntries reply from", address, "unsuccessful: next_index =", next);
     }
   }
+}
+
+std::tuple<protocol::raft::GetConfiguration_Response, grpc::Status> ConcensusModule::ProcessGetConfigurationClientRequest() {
+  protocol::raft::GetConfiguration_Response reply;
+  if (m_state != RaftState::LEADER) {
+    std::make_tuple(reply, grpc::Status::CANCELLED);
+  }
+  if (m_configuration->State() != ClusterConfiguration::ConfigurationState::STABLE || m_commit_index < m_configuration->Id()) {
+    std::make_tuple(reply, grpc::Status::CANCELLED);
+  }
+  reply.set_id(m_configuration->Id());
+  *reply.mutable_servers() = m_configuration->Configuration().prev_configuration();
+  return std::make_tuple(reply, grpc::Status::OK);
+}
+
+std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusModule::ProcessSetConfigurationClientRequest(
+    protocol::raft::SetConfiguration_Request& request) {
+  protocol::raft::SetConfiguration_Response reply;
+  if (State() != RaftState::LEADER) {
+    reply.set_status(false);
+    return std::make_tuple(reply, grpc::Status::CANCELLED);
+  }
+
+  if (m_configuration->Id() != request.oldid()) {
+    reply.set_status(false);
+    return std::make_tuple(reply, grpc::Status::CANCELLED);
+  }
+
+  if (m_configuration->State() != ClusterConfiguration::ConfigurationState::STABLE) {
+    reply.set_status(false);
+    return std::make_tuple(reply, grpc::Status::CANCELLED);
+  }
+
+  // TODO: Handle syncing leader logs to new servers
+  int saved_term = Term();
+  m_configuration->SetState(ClusterConfiguration::ConfigurationState::SYNC);
+  Logger::Debug("Log syncing with new server complete");
+
+  protocol::log::LogEntry configuration_entry;
+  protocol::log::Configuration new_configuration;
+  configuration_entry.set_type(protocol::log::LogOpCode::CONFIGURATION);
+  for (auto& new_server:request.new_servers()) {
+    *new_configuration.add_next_configuration() = new_server;
+  }
+  *new_configuration.mutable_prev_configuration() = m_configuration->Configuration().prev_configuration();
+  *configuration_entry.mutable_configuration() = new_configuration;
+
+  int joint_id = Append(configuration_entry);
+
+  std::condition_variable configuration_replicate;
+  std::mutex m;
+  std::unique_lock lock(m);
+  configuration_replicate.wait(lock, [this, joint_id, saved_term] {
+    return m_configuration->Id() > joint_id && m_commit_index >= m_configuration->Id() || Term() != saved_term;
+  });
+
+  if (Term() != saved_term) {
+    reply.set_status(false);
+    return std::make_tuple(reply, grpc::Status::CANCELLED);
+  }
+
+  Logger::Debug("Configuration log entry committed successfully");
+
+  reply.set_status(true);
+  return std::make_tuple(reply, grpc::Status::OK);
 }
 
 }

@@ -117,7 +117,8 @@ std::string PersistedLog::Page::ClosedFilename() const {
 
 PersistedLog::PersistedLog(
     const std::string& parent_dir,
-    const int max_file_size)
+    const int max_file_size,
+    bool restore)
   : Log()
   , m_dir(parent_dir)
   , m_max_file_size(max_file_size)
@@ -126,7 +127,9 @@ PersistedLog::PersistedLog(
   std::filesystem::create_directories(parent_dir);
 
   // Restores raft metadata and log entries from disk after recovering from server failure
-  RestoreState();
+  if (restore) {
+    RestoreState();
+  }
   // If there were no log entries to restore a new open page must be created to store new
   // log entries
   if (!m_open_page) {
@@ -219,8 +222,32 @@ std::vector<protocol::log::LogEntry> PersistedLog::Entries(int start, int end) c
   return query_entries;
 }
 
-void PersistedLog::Append(const std::vector<protocol::log::LogEntry>& new_entries) {
+std::tuple<int, bool> PersistedLog::LatestConfiguration(protocol::log::Configuration& configuration) const {
+  for (auto it = m_log_indices.rbegin(); it != m_log_indices.rend(); it++) {
+    int log_index = it->second->start_index;
+    for (auto& record:it->second->log_entries) {
+      if (record.entry.has_configuration()) {
+        *configuration.mutable_prev_configuration() = record.entry.configuration().prev_configuration();
+        *configuration.mutable_next_configuration() = record.entry.configuration().next_configuration();
+        return std::make_tuple(log_index, true);
+      }
+      log_index++;
+    }
+  }
+  return std::make_tuple(0, false);
+}
+
+int PersistedLog::Append(protocol::log::LogEntry& new_entry) {
+  int log_index = LogSize();
+  PersistLogEntries({new_entry});
+  return log_index;
+}
+
+std::pair<int, int> PersistedLog::Append(const std::vector<protocol::log::LogEntry>& new_entries) {
+  int start = LogSize();
   PersistLogEntries(new_entries);
+  int end = LogSize();
+  return {start, end};
 }
 
 void PersistedLog::TruncateSuffix(const int removal_index) {

@@ -10,16 +10,15 @@
 
 namespace raft {
 
+class ClusterConfiguration;
 class ConcensusModule;
+class Log;
 class RaftClient;
 class RaftServer;
-class Log;
 
 class GlobalCtxManager {
 public:
-  GlobalCtxManager(
-      const std::string& address,
-      const std::vector<std::string>& peer_ids);
+  GlobalCtxManager(const std::string& address);
 
   std::shared_ptr<ConcensusModule> ConcensusInstance() const;
   std::shared_ptr<RaftClient> ClientInstance() const;
@@ -36,7 +35,6 @@ private:
 
 public:
   std::string address;
-  std::vector<std::string> peer_ids;
 };
 
 }

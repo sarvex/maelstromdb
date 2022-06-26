@@ -7,7 +7,8 @@ import "log.proto";
 enum OpCode {
   REQUEST_VOTE = 0;
   APPEND_ENTRIES = 1;
-  INSTALL_SNAPSHOT = 2;
+  GET_CONFIGURATION = 2;
+  SET_CONFIGURATION = 3;
 }
 
 message RequestVote {
@@ -40,25 +41,31 @@ message AppendEntries {
   }
 }
 
-message InstallSnapshot {
+message GetConfiguration {
   message Request {
-    int64 term = 1;
-    string leaderId = 2;
-    int64 lastIncludedIndex = 3;
-    int64 lastIncludedTerm = 4;
-    int64 offset = 5;
-    repeated bytes data = 6;
-    bool done = 7;
   }
 
   message Response {
-    int64 term = 1;
+    int64 id = 1;
+    repeated log.Server servers = 2;
+  }
+}
+
+message SetConfiguration {
+  message Request {
+    int64 oldId = 1;
+    repeated log.Server new_servers = 2;
+  }
+
+  message Response {
+    bool status = 1;
   }
 }
 
 service RaftService {
   rpc RequestVote (RequestVote.Request) returns (RequestVote.Response) {}
   rpc AppendEntries (AppendEntries.Request) returns (AppendEntries.Response) {}
-  rpc InstallSnapshot (InstallSnapshot.Request) returns (InstallSnapshot.Response) {}
+  rpc GetConfiguration (GetConfiguration.Request) returns (GetConfiguration.Response) {}
+  rpc SetConfiguration (SetConfiguration.Request) returns (SetConfiguration.Response) {}
 }
 

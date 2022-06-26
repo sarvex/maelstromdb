@@ -22,7 +22,9 @@ public:
 
   enum class CommandID {
     REQUEST_VOTE,
-    APPEND_ENTRIES
+    APPEND_ENTRIES,
+    GET_CONFIGURATION,
+    SET_CONFIGURATION
   };
 
   struct Tag {
@@ -36,7 +38,7 @@ public:
   RaftClient(const RaftClient&) = delete;
   RaftClient& operator=(const RaftClient&) = delete;
 
-  void ClientInit();
+  void CreateConnections(std::unordered_set<std::string> peer_addresses);
 
   void RequestVote(
       const std::string& peer_id,
@@ -49,7 +51,15 @@ public:
       const int term,
       const int prev_log_index,
       const int prev_log_term,
+      const std::vector<protocol::log::LogEntry> entries,
       const int leader_commit);
+
+  void GetClusterConfiguration(const std::string& peer_id);
+
+  void SetClusterConfiguration(
+      const std::string& peer_id,
+      const int old_id,
+      const std::vector<protocol::log::Server> new_servers);
 
   void AsyncCompleteRPC();
 
@@ -68,6 +78,12 @@ private:
 
   void HandleAppendEntriesReply(AsyncClientCall<protocol::raft::AppendEntries_Request,
       protocol::raft::AppendEntries_Response>* call);
+
+  void HandleGetConfigurationReply(AsyncClientCall<protocol::raft::GetConfiguration_Request,
+      protocol::raft::GetConfiguration_Response>* call);
+
+  void HandleSetConfigurationReply(AsyncClientCall<protocol::raft::SetConfiguration_Request,
+      protocol::raft::SetConfiguration_Response>* call);
 
 private:
   GlobalCtxManager& m_ctx;

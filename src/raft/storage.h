@@ -82,12 +82,16 @@ public:
    */
   virtual std::vector<protocol::log::LogEntry> Entries(int start, int end) const = 0;
 
+  virtual std::tuple<int, bool> LatestConfiguration(protocol::log::Configuration& configuration) const = 0;
+
+  virtual int Append(protocol::log::LogEntry& new_entry) = 0;
+
   /**
    * Stores new transactions at the end of the raft log.
    *
    * @param new_entries list of entries that must be appended to log
    */
-  virtual void Append(const std::vector<protocol::log::LogEntry>& new_entries) = 0;
+  virtual std::pair<int, int> Append(const std::vector<protocol::log::LogEntry>& new_entries) = 0;
 
   /**
    * Removes all entries from raft log at and after a given index.
@@ -114,7 +118,8 @@ class PersistedLog : public Log {
 public:
   PersistedLog(
       const std::string& parent_dir,
-      const int max_file_size = 1024*8);
+      const int max_file_size = 1024*8,
+      bool restore=false);
 
   bool Metadata(protocol::log::LogMetadata& metadata) const override;
   void SetMetadata(protocol::log::LogMetadata& metadata) override;
@@ -127,7 +132,10 @@ public:
   protocol::log::LogEntry Entry(const int idx) const override;
   std::vector<protocol::log::LogEntry> Entries(int start, int end) const override;
 
-  void Append(const std::vector<protocol::log::LogEntry>& new_entries) override;
+  std::tuple<int, bool> LatestConfiguration(protocol::log::Configuration& configuration) const override;
+
+  int Append(protocol::log::LogEntry& new_entry) override;
+  std::pair<int, int> Append(const std::vector<protocol::log::LogEntry>& new_entries) override;
 
   void TruncateSuffix(const int removal_index) override;
 

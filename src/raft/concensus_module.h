@@ -3,6 +3,8 @@
 
 #include <grpcpp/grpcpp.h>
 #include <algorithm>
+#include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -13,6 +15,7 @@
 #include <vector>
 
 #include "async_executor.h"
+#include "cluster_configuration.h"
 #include "logger.h"
 #include "raft.grpc.pb.h"
 #include "timer.h"
@@ -23,6 +26,10 @@ class GlobalCtxManager;
 
 class ConcensusModule {
 public:
+  using clock_type = std::chrono::high_resolution_clock;
+  using time_point = std::chrono::time_point<clock_type>;
+  using milliseconds = std::chrono::milliseconds;
+
   enum class RaftState {
     /**
      * Indicates that this node should handle all read/write requests.
@@ -67,6 +74,8 @@ public:
    *    Used for debugging purposes.
    */
   void StateMachineInit(int delay = 0);
+
+  void InitializeConfiguration(std::vector<std::string>& peer_addresses);
 
   /**
    * Retrieve raft term of node.
@@ -118,7 +127,8 @@ public:
    */
   void ProcessRequestVoteServerResponse(
       protocol::raft::RequestVote_Request& request,
-      protocol::raft::RequestVote_Response& reply);
+      protocol::raft::RequestVote_Response& reply,
+      const std::string& address);
 
   /**
    * Handles AppendEntries RPC request. Compares raft log indices to append
@@ -148,6 +158,11 @@ public:
       protocol::raft::AppendEntries_Request& request,
       protocol::raft::AppendEntries_Response& reply,
       const std::string& address);
+
+  std::tuple<protocol::raft::GetConfiguration_Response, grpc::Status> ProcessGetConfigurationClientRequest();
+
+  std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ProcessSetConfigurationClientRequest(
+      protocol::raft::SetConfiguration_Request& request);
 
 private:
   /**
@@ -183,14 +198,6 @@ private:
   void ScheduleHeartbeat();
 
   /**
-   * Indicates whether the node has received a majority of votes.
-   *
-   * @param votes the number of votes the node has received
-   * @returns true only if votes >= majority of nodes in cluster
-   */
-  bool CheckQuorum(const int votes) const;
-
-  /**
    * Persists raft metadata (term, vote) to disk.
    */
   void StoreState() const;
@@ -200,12 +207,19 @@ private:
    */
   void Shutdown();
 
+  int Append(protocol::log::LogEntry& log_entry);
+  std::pair<int, int> Append(std::vector<protocol::log::LogEntry>& log_entries);
+
+  void CommitEntries(std::vector<protocol::log::LogEntry>& log_entries);
+
 private:
   /**
    * Global context object that gives state machine access to client, server,
    * and raft log.
    */
   GlobalCtxManager& m_ctx;
+
+  std::unique_ptr<ClusterConfiguration> m_configuration;
 
   /**
    * Execution handler that runs functions using a managed pool of threads.
@@ -277,6 +291,18 @@ private:
    * to redirect to the LEADER. Currently not implemented.
    */
   std::string m_leader_id;
+
+  /**
+   * The randomly generated [150, 300] delay in ms after which an election will begin.
+   * Used for calculating the election deadline.
+   */
+  milliseconds m_election_timeout;
+
+  /**
+   * The time at which the node will start an election. Useful for rejecting RequestVote
+   * RPCs from nodes that have been removed from the cluster configuration.
+   */
+  time_point m_election_deadline;
 };
 
 }

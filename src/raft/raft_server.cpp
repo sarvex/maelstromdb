@@ -55,6 +55,14 @@ void RaftServer::RpcEventLoop() {
           static_cast<RaftServer::AppendEntriesData*>(tag_ptr->call)->Proceed();
           break;
         }
+        case RaftClient::CommandID::GET_CONFIGURATION: {
+          static_cast<RaftServer::GetConfigurationData*>(tag_ptr->call)->Proceed();
+          break;
+        }
+        case RaftClient::CommandID::SET_CONFIGURATION: {
+          static_cast<RaftServer::SetConfigurationData*>(tag_ptr->call)->Proceed();
+          break;
+        }
       }    
     } else {
       Logger::Info("RPC call failed unexpectedly");
@@ -93,7 +101,6 @@ void RaftServer::RequestVoteData::Proceed() {
 
       m_status = CallStatus::FINISH;
       m_responder.Finish(m_response, s, (void*)&m_tag);
-
       break;
     }
     case CallStatus::FINISH: {
@@ -133,7 +140,84 @@ void RaftServer::AppendEntriesData::Proceed() {
 
       m_status = CallStatus::FINISH;
       m_responder.Finish(m_response, s, (void*)&m_tag);
+      break;
+    }
+    case CallStatus::FINISH: {
+      delete this;
+    }
+  }
+}
 
+RaftServer::SetConfigurationData::SetConfigurationData(
+    GlobalCtxManager& ctx,
+    protocol::raft::RaftService::AsyncService* service,
+    grpc::ServerCompletionQueue* scq)
+  : CallData(ctx, service, scq), m_responder(&m_server_ctx) {
+  m_tag.id = RaftClient::CommandID::SET_CONFIGURATION;
+  m_tag.call = this;
+  Proceed();
+}
+
+void RaftServer::SetConfigurationData::Proceed() {
+  switch (m_status) {
+    case CallStatus::CREATE: {
+      m_status = CallStatus::PROCESS;
+      m_service->RequestSetConfiguration(
+          &m_server_ctx,
+          &m_request,
+          &m_responder,
+          m_scq,
+          m_scq,
+          (void*)&m_tag);
+      break;
+    }
+    case CallStatus::PROCESS: {
+      Logger::Debug("Processing SetConfiguration reply...");
+      new SetConfigurationData(m_ctx, m_service, m_scq);
+
+      auto [m_response, s] = m_ctx.ConcensusInstance()->ProcessSetConfigurationClientRequest(m_request);
+
+      m_status = CallStatus::FINISH;
+      m_responder.Finish(m_response, s, (void*)&m_tag);
+      break;
+    }
+    case CallStatus::FINISH: {
+      delete this;
+    }
+  }
+}
+
+RaftServer::GetConfigurationData::GetConfigurationData(
+    GlobalCtxManager& ctx,
+    protocol::raft::RaftService::AsyncService* service,
+    grpc::ServerCompletionQueue* scq)
+  : CallData(ctx, service, scq), m_responder(&m_server_ctx) {
+  m_tag.id = RaftClient::CommandID::GET_CONFIGURATION;
+  m_tag.call = this;
+  Proceed();
+}
+
+void RaftServer::GetConfigurationData::Proceed() {
+  switch (m_status) {
+    case CallStatus::CREATE: {
+      m_status = CallStatus::PROCESS;
+      m_service->RequestGetConfiguration(
+          &m_server_ctx,
+          &m_request,
+          &m_responder,
+          m_scq,
+          m_scq,
+          (void*)&m_tag);
+      break;
+    }
+    case CallStatus::PROCESS: {
+      Logger::Debug("Processing SetConfiguration reply...");
+      new GetConfigurationData(m_ctx, m_service, m_scq);
+
+      auto [m_response, s] = m_ctx.ConcensusInstance()->ProcessGetConfigurationClientRequest();
+
+      m_status = CallStatus::FINISH;
+      m_responder.Finish(m_response, s, (void*)&m_tag);
       break;
     }
     case CallStatus::FINISH: {

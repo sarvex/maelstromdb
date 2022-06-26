@@ -97,6 +97,38 @@ public:
       RaftClient::Tag m_tag;
   };
 
+  class SetConfigurationData : public CallData {
+  public:
+    SetConfigurationData(
+        GlobalCtxManager& ctx,
+        protocol::raft::RaftService::AsyncService* service,
+        grpc::ServerCompletionQueue* scq);
+
+    void Proceed() override;
+
+  private:
+    protocol::raft::SetConfiguration_Request m_request;
+    protocol::raft::SetConfiguration_Response m_response;
+    grpc::ServerAsyncResponseWriter<protocol::raft::SetConfiguration_Response> m_responder;
+    RaftClient::Tag m_tag;
+  };
+
+  class GetConfigurationData : public CallData {
+  public:
+    GetConfigurationData(
+        GlobalCtxManager& ctx,
+        protocol::raft::RaftService::AsyncService* service,
+        grpc::ServerCompletionQueue* scq);
+
+    void Proceed() override;
+
+  private:
+    protocol::raft::GetConfiguration_Request m_request;
+    protocol::raft::GetConfiguration_Response m_response;
+    grpc::ServerAsyncResponseWriter<protocol::raft::GetConfiguration_Response> m_responder;
+    RaftClient::Tag m_tag;
+  };
+
 private:
   protocol::raft::RaftService::AsyncService m_service;
 };

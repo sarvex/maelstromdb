@@ -8,9 +8,22 @@ enum LogOpCode {
   DATA = 2;
 }
 
+message Server {
+  string address = 1;
+}
+
+message Configuration {
+  repeated Server prev_configuration = 1;
+  repeated Server next_configuration = 2;
+}
+
 message LogEntry {
   int64 term = 1;
-  bytes data = 2;
+  LogOpCode type = 2;
+  oneof LogData {
+    Configuration configuration = 3;
+    bytes data = 4;
+  }
 }
 
 message LogMetadata {
