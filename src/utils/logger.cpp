@@ -10,6 +10,18 @@ void Logger::SetLevel(LogLevel new_level) {
   GetInstance().m_level = new_level;
 }
 
+void Logger::SetLogFile(std::string address) {
+  GetInstance().m_type = Logger::LogType::FILE;
+  std::string abs_file_dir = "logs/" + address + "/";
+  std::string abs_file_path = abs_file_dir + "log.txt";
+  std::filesystem::create_directories(abs_file_dir);
+  GetInstance().m_log_file.open(abs_file_path);
+}
+
+void Logger::SetLogConsole() {
+  GetInstance().m_type = Logger::LogType::CONSOLE;
+}
+
 Logger& Logger::GetInstance() {
   static Logger singleton{};
   return singleton;
