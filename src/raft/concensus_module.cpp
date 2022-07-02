@@ -92,6 +92,10 @@ ConcensusModule::RaftState ConcensusModule::State() const {
   return m_state.load();
 }
 
+std::string ConcensusModule::LeaderHint() const {
+  return m_leader_id;
+}
+
 void ConcensusModule::ElectionCallback(const int term) {
   Logger::Debug("Starting election");
 
@@ -217,6 +221,11 @@ void ConcensusModule::PromoteToLeader() {
 
   m_election_timer->Cancel();
 
+  protocol::log::LogEntry noop_entry;
+  noop_entry.set_term(Term());
+  noop_entry.set_type(protocol::log::NO_OP);
+  Append(noop_entry);
+
   ScheduleHeartbeat();
 }
 
@@ -252,6 +261,15 @@ std::pair<int, int> ConcensusModule::Append(std::vector<protocol::log::LogEntry>
 void ConcensusModule::CommitEntries(std::vector<protocol::log::LogEntry>& log_entries) {
   for (int i = 0; i < log_entries.size(); i++) {
   }
+}
+
+grpc::Status ConcensusModule::ConstructError(std::string err_msg, protocol::raft::Error::Code code) const {
+  protocol::raft::Error err_details;
+  err_details.set_statuscode(code);
+  if (code == protocol::raft::Error::Code::Error_Code_NOT_LEADER) {
+    err_details.set_leaderhint(LeaderHint());
+  }
+  return grpc::Status(grpc::StatusCode::UNKNOWN, err_msg, err_details.SerializeAsString());
 }
 
 std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::ProcessRequestVoteClientRequest(
@@ -485,12 +503,17 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
 
 std::tuple<protocol::raft::GetConfiguration_Response, grpc::Status> ConcensusModule::ProcessGetConfigurationClientRequest() {
   protocol::raft::GetConfiguration_Response reply;
+
   if (m_state != RaftState::LEADER) {
-    std::make_tuple(reply, grpc::Status::CANCELLED);
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    std::make_tuple(reply, err);
   }
+
   if (m_configuration->State() != ClusterConfiguration::ConfigurationState::STABLE || m_commit_index < m_configuration->Id()) {
-    std::make_tuple(reply, grpc::Status::CANCELLED);
+    grpc::Status err = ConstructError("Peer is not in a stable state", protocol::raft::Error::Code::Error_Code_RETRY);
+    std::make_tuple(reply, err);
   }
+
   reply.set_id(m_configuration->Id());
   *reply.mutable_servers() = m_configuration->Configuration().prev_configuration();
   return std::make_tuple(reply, grpc::Status::OK);
@@ -500,18 +523,21 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
     protocol::raft::SetConfiguration_Request& request) {
   protocol::raft::SetConfiguration_Response reply;
   if (State() != RaftState::LEADER) {
-    reply.set_status(false);
-    return std::make_tuple(reply, grpc::Status::CANCELLED);
+    reply.set_ok(false);
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    return std::make_tuple(reply, err);
   }
 
   if (m_configuration->Id() != request.oldid()) {
-    reply.set_status(false);
-    return std::make_tuple(reply, grpc::Status::CANCELLED);
+    reply.set_ok(false);
+    grpc::Status err = ConstructError("Cluster configuration out of date", protocol::raft::Error::Code::Error_Code_OUT_OF_DATE);
+    return std::make_tuple(reply, err);
   }
 
   if (m_configuration->State() != ClusterConfiguration::ConfigurationState::STABLE) {
-    reply.set_status(false);
-    return std::make_tuple(reply, grpc::Status::CANCELLED);
+    reply.set_ok(false);
+    grpc::Status err = ConstructError("Peer is not in a stable state", protocol::raft::Error::Code::Error_Code_RETRY);
+    std::make_tuple(reply, err);
   }
 
   // TODO: Handle syncing leader logs to new servers
@@ -538,13 +564,13 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
   });
 
   if (Term() != saved_term) {
-    reply.set_status(false);
+    reply.set_ok(false);
     return std::make_tuple(reply, grpc::Status::CANCELLED);
   }
 
   Logger::Debug("Configuration log entry committed successfully");
 
-  reply.set_status(true);
+  reply.set_ok(true);
   return std::make_tuple(reply, grpc::Status::OK);
 }
 

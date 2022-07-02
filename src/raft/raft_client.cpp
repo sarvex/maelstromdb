@@ -86,44 +86,44 @@ void RaftClient::AppendEntries(
   call->response_reader->Finish(&call->reply, &call->status, (void*)tag);
 }
 
-void RaftClient::GetClusterConfiguration(const std::string& peer_id) {
-  protocol::raft::GetConfiguration_Request request_args;
-  auto* call = new AsyncClientCall<protocol::raft::GetConfiguration_Request, protocol::raft::GetConfiguration_Response>;
+// protocol::raft::GetConfiguration_Response RaftClient::GetClusterConfiguration(const std::string& peer_id) {
+//   protocol::raft::GetConfiguration_Request request_args;
+//   auto* call = new AsyncClientCall<protocol::raft::GetConfiguration_Request, protocol::raft::GetConfiguration_Response>;
+//
+//   call->request = request_args;
+//   call->response_reader = m_stubs[peer_id]->PrepareAsyncGetConfiguration(&call->ctx, request_args, &m_cq);
+//   call->response_reader->StartCall();
+//
+//   auto* tag = new Tag;
+//   tag->call = (void*)call;
+//   tag->id = CommandID::GET_CONFIGURATION;
+//
+//   call->response_reader->Finish(&call->reply, &call->status, (void*)tag);
+// }
 
-  call->request = request_args;
-  call->response_reader = m_stubs[peer_id]->PrepareAsyncGetConfiguration(&call->ctx, request_args, &m_cq);
-  call->response_reader->StartCall();
-
-  auto* tag = new Tag;
-  tag->call = (void*)call;
-  tag->id = CommandID::GET_CONFIGURATION;
-
-  call->response_reader->Finish(&call->reply, &call->status, (void*)tag);
-}
-
-void RaftClient::SetClusterConfiguration(
-    const std::string& peer_id,
-    const int old_id,
-    const std::vector<protocol::log::Server> new_servers) {
-  protocol::raft::SetConfiguration_Request request_args;
-  request_args.set_oldid(old_id);
-
-  for (auto& server:new_servers) {
-    *request_args.add_new_servers() = server;
-  }
-
-  auto* call = new AsyncClientCall<protocol::raft::SetConfiguration_Request, protocol::raft::SetConfiguration_Response>;
-
-  call->request = request_args;
-  call->response_reader = m_stubs[peer_id]->PrepareAsyncSetConfiguration(&call->ctx, request_args, &m_cq);
-  call->response_reader->StartCall();
-
-  auto* tag = new Tag;
-  tag->call = (void*)call;
-  tag->id = CommandID::SET_CONFIGURATION;
-
-  call->response_reader->Finish(&call->reply, &call->status, (void*)tag);
-}
+// protocol::raft::SetConfiguration_Response RaftClient::SetClusterConfiguration(
+//     const std::string& peer_id,
+//     const int old_id,
+//     const std::vector<protocol::log::Server> new_servers) {
+//   protocol::raft::SetConfiguration_Request request_args;
+//   request_args.set_oldid(old_id);
+//
+//   for (auto& server:new_servers) {
+//     *request_args.add_new_servers() = server;
+//   }
+//
+//   auto* call = new AsyncClientCall<protocol::raft::SetConfiguration_Request, protocol::raft::SetConfiguration_Response>;
+//
+//   call->request = request_args;
+//   call->response_reader = m_stubs[peer_id]->PrepareAsyncSetConfiguration(&call->ctx, request_args, &m_cq);
+//   call->response_reader->StartCall();
+//
+//   auto* tag = new Tag;
+//   tag->call = (void*)call;
+//   tag->id = CommandID::SET_CONFIGURATION;
+//
+//   call->response_reader->Finish(&call->reply, &call->status, (void*)tag);
+// }
 
 void RaftClient::AsyncCompleteRPC() {
   void* tag;
@@ -152,24 +152,24 @@ void RaftClient::AsyncCompleteRPC() {
         delete call;
         break;
       }
-      case CommandID::SET_CONFIGURATION: {
-        auto* call = static_cast<AsyncClientCall<protocol::raft::SetConfiguration_Request,
-          protocol::raft::SetConfiguration_Response>*>(tag_ptr->call);
-
-        HandleSetConfigurationReply(call);
-
-        delete call;
-        break;
-      }
-      case CommandID::GET_CONFIGURATION: {
-        auto* call = static_cast<AsyncClientCall<protocol::raft::GetConfiguration_Request,
-          protocol::raft::GetConfiguration_Response>*>(tag_ptr->call);
-
-        HandleGetConfigurationReply(call);
-
-        delete call;
-        break;
-      }
+      // case CommandID::SET_CONFIGURATION: {
+      //   auto* call = static_cast<AsyncClientCall<protocol::raft::SetConfiguration_Request,
+      //     protocol::raft::SetConfiguration_Response>*>(tag_ptr->call);
+      //
+      //   HandleSetConfigurationReply(call);
+      //
+      //   delete call;
+      //   break;
+      // }
+      // case CommandID::GET_CONFIGURATION: {
+      //   auto* call = static_cast<AsyncClientCall<protocol::raft::GetConfiguration_Request,
+      //     protocol::raft::GetConfiguration_Response>*>(tag_ptr->call);
+      //
+      //   HandleGetConfigurationReply(call);
+      //
+      //   delete call;
+      //   break;
+      // }
     }
 
     delete tag_ptr;
@@ -202,29 +202,29 @@ void RaftClient::HandleAppendEntriesReply(AsyncClientCall<protocol::raft::Append
   Logger::Debug("AppendEntries call was received");
 }
 
-void RaftClient::HandleSetConfigurationReply(AsyncClientCall<protocol::raft::SetConfiguration_Request,
-    protocol::raft::SetConfiguration_Response>* call) {
-  if (!call->status.ok()) {
-    Logger::Info("SetConfiguration call failed unexpectedly");
-    return;
-  }
+// void RaftClient::HandleSetConfigurationReply(AsyncClientCall<protocol::raft::SetConfiguration_Request,
+//     protocol::raft::SetConfiguration_Response>* call) {
+//   if (!call->status.ok()) {
+//     Logger::Info("SetConfiguration call failed unexpectedly");
+//     return;
+//   }
+//
+//   // m_ctx.ConcensusInstance()->ProcessSetConfigurationServerResponse(call->request, call->reply);
+//
+//   Logger::Debug("SetConfiguration response was received");
+// }
 
-  // m_ctx.ConcensusInstance()->ProcessSetConfigurationServerResponse(call->request, call->reply);
-
-  Logger::Debug("SetConfiguration response was received");
-}
-
-void RaftClient::HandleGetConfigurationReply(AsyncClientCall<protocol::raft::GetConfiguration_Request,
-    protocol::raft::GetConfiguration_Response>* call) {
-  if (!call->status.ok()) {
-    Logger::Info("GetConfiguration call failed unexpectedly");
-    return;
-  }
-
-  // m_ctx.ConcensusInstance()->ProcessGetConfigurationServerResponse(call->request, call->reply);
-
-  Logger::Debug("GetConfiguration response was received");
-}
+// void RaftClient::HandleGetConfigurationReply(AsyncClientCall<protocol::raft::GetConfiguration_Request,
+//     protocol::raft::GetConfiguration_Response>* call) {
+//   if (!call->status.ok()) {
+//     Logger::Info("GetConfiguration call failed unexpectedly");
+//     return;
+//   }
+//
+//   // m_ctx.ConcensusInstance()->ProcessGetConfigurationServerResponse(call->request, call->reply);
+//
+//   Logger::Debug("GetConfiguration response was received");
+// }
 
 }
 

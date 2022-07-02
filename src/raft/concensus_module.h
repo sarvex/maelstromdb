@@ -91,6 +91,8 @@ public:
    */
   RaftState State() const;
 
+  std::string LeaderHint() const;
+
   /**
    * Set the node's state to FOLLOWER and reset the election timer.
    *
@@ -211,6 +213,8 @@ private:
   std::pair<int, int> Append(std::vector<protocol::log::LogEntry>& log_entries);
 
   void CommitEntries(std::vector<protocol::log::LogEntry>& log_entries);
+
+  grpc::Status ConstructError(std::string err_msg, protocol::raft::Error::Code code) const;
 
 private:
   /**

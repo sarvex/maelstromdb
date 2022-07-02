@@ -11,6 +11,21 @@ enum OpCode {
   SET_CONFIGURATION = 3;
 }
 
+message Error {
+  enum Code {
+    OK = 0;
+    NOT_LEADER = 1;
+    RETRY = 2;
+    TIMEOUT = 3;
+    CANCELLED = 4;
+    OUT_OF_DATE = 5;
+    UNEXPECTED_ERROR = 6;
+  }
+
+  Code statusCode = 1;
+  string leaderHint = 2;
+}
+
 message RequestVote {
   message Request {
     int64 term = 1;
@@ -58,7 +73,7 @@ message SetConfiguration {
   }
 
   message Response {
-    bool status = 1;
+    bool ok = 1;
   }
 }
 

@@ -54,9 +54,9 @@ public:
       const std::vector<protocol::log::LogEntry> entries,
       const int leader_commit);
 
-  void GetClusterConfiguration(const std::string& peer_id);
+  protocol::raft::GetConfiguration_Response GetClusterConfiguration(const std::string& peer_id);
 
-  void SetClusterConfiguration(
+  protocol::raft::SetConfiguration_Response SetClusterConfiguration(
       const std::string& peer_id,
       const int old_id,
       const std::vector<protocol::log::Server> new_servers);
@@ -78,12 +78,6 @@ private:
 
   void HandleAppendEntriesReply(AsyncClientCall<protocol::raft::AppendEntries_Request,
       protocol::raft::AppendEntries_Response>* call);
-
-  void HandleGetConfigurationReply(AsyncClientCall<protocol::raft::GetConfiguration_Request,
-      protocol::raft::GetConfiguration_Response>* call);
-
-  void HandleSetConfigurationReply(AsyncClientCall<protocol::raft::SetConfiguration_Request,
-      protocol::raft::SetConfiguration_Response>* call);
 
 private:
   GlobalCtxManager& m_ctx;

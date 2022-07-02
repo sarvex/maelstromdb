@@ -34,10 +34,10 @@ void RaftServer::ServerInit() {
   m_server = builder.BuildAndStart();
   Logger::Info("Server listening on", m_ctx.address);
 
-  RpcEventLoop();
+  RPCEventLoop();
 }
 
-void RaftServer::RpcEventLoop() {
+void RaftServer::RPCEventLoop() {
   new RaftServer::RequestVoteData(m_ctx, &m_service, m_scq.get());
   new RaftServer::AppendEntriesData(m_ctx, &m_service, m_scq.get());
 

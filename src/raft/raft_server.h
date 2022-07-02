@@ -25,7 +25,7 @@ public:
 
   virtual void ServerInit() = 0;
 
-  virtual void RpcEventLoop() = 0;
+  virtual void RPCEventLoop() = 0;
 
 protected:
   class CallData {
@@ -63,7 +63,7 @@ public:
 
   void ServerInit() override;
 
-  void RpcEventLoop() override;
+  void RPCEventLoop() override;
 
   class RequestVoteData : public CallData {
   public:
