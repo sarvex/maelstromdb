@@ -56,10 +56,10 @@ protected:
   std::unique_ptr<grpc::ServerCompletionQueue> m_scq;
 };
 
-class RaftServer : public AsyncServer {
+class RaftServerImpl : public AsyncServer {
 public:
-  RaftServer(GlobalCtxManager& ctx);
-  ~RaftServer();
+  RaftServerImpl(GlobalCtxManager& ctx);
+  ~RaftServerImpl();
 
   void ServerInit() override;
 
@@ -78,7 +78,7 @@ public:
       protocol::raft::RequestVote_Request m_request;
       protocol::raft::RequestVote_Response m_response;
       grpc::ServerAsyncResponseWriter<protocol::raft::RequestVote_Response> m_responder;
-      RaftClient::Tag m_tag;
+      RaftClientImpl::Tag m_tag;
   };
 
   class AppendEntriesData : public CallData {
@@ -94,7 +94,7 @@ public:
       protocol::raft::AppendEntries_Request m_request;
       protocol::raft::AppendEntries_Response m_response;
       grpc::ServerAsyncResponseWriter<protocol::raft::AppendEntries_Response> m_responder;
-      RaftClient::Tag m_tag;
+      RaftClientImpl::Tag m_tag;
   };
 
   class SetConfigurationData : public CallData {
@@ -110,7 +110,7 @@ public:
     protocol::raft::SetConfiguration_Request m_request;
     protocol::raft::SetConfiguration_Response m_response;
     grpc::ServerAsyncResponseWriter<protocol::raft::SetConfiguration_Response> m_responder;
-    RaftClient::Tag m_tag;
+    RaftClientImpl::Tag m_tag;
   };
 
   class GetConfigurationData : public CallData {
@@ -126,7 +126,7 @@ public:
     protocol::raft::GetConfiguration_Request m_request;
     protocol::raft::GetConfiguration_Response m_response;
     grpc::ServerAsyncResponseWriter<protocol::raft::GetConfiguration_Response> m_responder;
-    RaftClient::Tag m_tag;
+    RaftClientImpl::Tag m_tag;
   };
 
 private:

@@ -17,16 +17,16 @@ AsyncServer::CallData::CallData(
   : m_ctx(ctx), m_service(service), m_scq(scq), m_status(CallStatus::CREATE) {
 }
 
-RaftServer::RaftServer(GlobalCtxManager& ctx)
+RaftServerImpl::RaftServerImpl(GlobalCtxManager& ctx)
   : AsyncServer(ctx) {
 }
 
-RaftServer::~RaftServer() {
+RaftServerImpl::~RaftServerImpl() {
   m_server->Shutdown();
   m_scq->Shutdown();
 }
 
-void RaftServer::ServerInit() {
+void RaftServerImpl::ServerInit() {
   grpc::ServerBuilder builder;
   builder.AddListeningPort(m_ctx.address, grpc::InsecureServerCredentials());
   builder.RegisterService(&m_service);
@@ -37,32 +37,32 @@ void RaftServer::ServerInit() {
   RPCEventLoop();
 }
 
-void RaftServer::RPCEventLoop() {
-  new RaftServer::RequestVoteData(m_ctx, &m_service, m_scq.get());
-  new RaftServer::AppendEntriesData(m_ctx, &m_service, m_scq.get());
-  new RaftServer::GetConfigurationData(m_ctx, &m_service, m_scq.get());
-  new RaftServer::SetConfigurationData(m_ctx, &m_service, m_scq.get());
+void RaftServerImpl::RPCEventLoop() {
+  new RaftServerImpl::RequestVoteData(m_ctx, &m_service, m_scq.get());
+  new RaftServerImpl::AppendEntriesData(m_ctx, &m_service, m_scq.get());
+  new RaftServerImpl::GetConfigurationData(m_ctx, &m_service, m_scq.get());
+  new RaftServerImpl::SetConfigurationData(m_ctx, &m_service, m_scq.get());
 
   void* tag;
   bool ok;
   while (true) {
     if (m_scq->Next(&tag, &ok) && ok) {
-      auto* tag_ptr = static_cast<RaftClient::Tag*>(tag);
+      auto* tag_ptr = static_cast<RaftClientImpl::Tag*>(tag);
       switch (tag_ptr->id) {
-        case RaftClient::CommandID::REQUEST_VOTE: {
-          static_cast<RaftServer::RequestVoteData*>(tag_ptr->call)->Proceed();
+        case RaftClientImpl::ClientCommandID::REQUEST_VOTE: {
+          static_cast<RaftServerImpl::RequestVoteData*>(tag_ptr->call)->Proceed();
           break;
         }
-        case RaftClient::CommandID::APPEND_ENTRIES: {
-          static_cast<RaftServer::AppendEntriesData*>(tag_ptr->call)->Proceed();
+        case RaftClientImpl::ClientCommandID::APPEND_ENTRIES: {
+          static_cast<RaftServerImpl::AppendEntriesData*>(tag_ptr->call)->Proceed();
           break;
         }
-        case RaftClient::CommandID::GET_CONFIGURATION: {
-          static_cast<RaftServer::GetConfigurationData*>(tag_ptr->call)->Proceed();
+        case RaftClientImpl::ClientCommandID::GET_CONFIGURATION: {
+          static_cast<RaftServerImpl::GetConfigurationData*>(tag_ptr->call)->Proceed();
           break;
         }
-        case RaftClient::CommandID::SET_CONFIGURATION: {
-          static_cast<RaftServer::SetConfigurationData*>(tag_ptr->call)->Proceed();
+        case RaftClientImpl::ClientCommandID::SET_CONFIGURATION: {
+          static_cast<RaftServerImpl::SetConfigurationData*>(tag_ptr->call)->Proceed();
           break;
         }
       }    
@@ -72,17 +72,17 @@ void RaftServer::RPCEventLoop() {
   }
 }
 
-RaftServer::RequestVoteData::RequestVoteData(
+RaftServerImpl::RequestVoteData::RequestVoteData(
     GlobalCtxManager& ctx,
     protocol::raft::RaftService::AsyncService* service,
     grpc::ServerCompletionQueue* scq)
   : CallData(ctx, service, scq), m_responder(&m_server_ctx) {
-  m_tag.id = RaftClient::CommandID::REQUEST_VOTE;
+  m_tag.id = RaftClientImpl::ClientCommandID::REQUEST_VOTE;
   m_tag.call = this;
   Proceed();
 }
 
-void RaftServer::RequestVoteData::Proceed() {
+void RaftServerImpl::RequestVoteData::Proceed() {
   switch (m_status) {
     case CallStatus::CREATE: {
       m_status = CallStatus::PROCESS;
@@ -111,17 +111,17 @@ void RaftServer::RequestVoteData::Proceed() {
   }
 }
 
-RaftServer::AppendEntriesData::AppendEntriesData(
+RaftServerImpl::AppendEntriesData::AppendEntriesData(
     GlobalCtxManager& ctx,
     protocol::raft::RaftService::AsyncService* service,
     grpc::ServerCompletionQueue* scq)
   : CallData(ctx, service, scq), m_responder(&m_server_ctx) {
-  m_tag.id = RaftClient::CommandID::APPEND_ENTRIES;
+  m_tag.id = RaftClientImpl::ClientCommandID::APPEND_ENTRIES;
   m_tag.call = this;
   Proceed();
 }
 
-void RaftServer::AppendEntriesData::Proceed() {
+void RaftServerImpl::AppendEntriesData::Proceed() {
   switch (m_status) {
     case CallStatus::CREATE: {
       m_status = CallStatus::PROCESS;
@@ -150,17 +150,17 @@ void RaftServer::AppendEntriesData::Proceed() {
   }
 }
 
-RaftServer::SetConfigurationData::SetConfigurationData(
+RaftServerImpl::SetConfigurationData::SetConfigurationData(
     GlobalCtxManager& ctx,
     protocol::raft::RaftService::AsyncService* service,
     grpc::ServerCompletionQueue* scq)
   : CallData(ctx, service, scq), m_responder(&m_server_ctx) {
-  m_tag.id = RaftClient::CommandID::SET_CONFIGURATION;
+  m_tag.id = RaftClientImpl::ClientCommandID::SET_CONFIGURATION;
   m_tag.call = this;
   Proceed();
 }
 
-void RaftServer::SetConfigurationData::Proceed() {
+void RaftServerImpl::SetConfigurationData::Proceed() {
   switch (m_status) {
     case CallStatus::CREATE: {
       m_status = CallStatus::PROCESS;
@@ -189,17 +189,17 @@ void RaftServer::SetConfigurationData::Proceed() {
   }
 }
 
-RaftServer::GetConfigurationData::GetConfigurationData(
+RaftServerImpl::GetConfigurationData::GetConfigurationData(
     GlobalCtxManager& ctx,
     protocol::raft::RaftService::AsyncService* service,
     grpc::ServerCompletionQueue* scq)
   : CallData(ctx, service, scq), m_responder(&m_server_ctx) {
-  m_tag.id = RaftClient::CommandID::GET_CONFIGURATION;
+  m_tag.id = RaftClientImpl::ClientCommandID::GET_CONFIGURATION;
   m_tag.call = this;
   Proceed();
 }
 
-void RaftServer::GetConfigurationData::Proceed() {
+void RaftServerImpl::GetConfigurationData::Proceed() {
   switch (m_status) {
     case CallStatus::CREATE: {
       m_status = CallStatus::PROCESS;

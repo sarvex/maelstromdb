@@ -16,11 +16,11 @@ namespace raft {
 
 class GlobalCtxManager;
 
-class RaftClient {
+class RaftClientImpl {
 public:
   using stub_map = std::unordered_map<std::string, std::unique_ptr<protocol::raft::RaftService::Stub>>;
 
-  enum class CommandID {
+  enum class ClientCommandID {
     REQUEST_VOTE,
     APPEND_ENTRIES,
     GET_CONFIGURATION,
@@ -29,14 +29,14 @@ public:
 
   struct Tag {
     void* call;
-    CommandID id;
+    ClientCommandID id;
   };
 
 public:
-  RaftClient(GlobalCtxManager& ctx);
+  RaftClientImpl(GlobalCtxManager& ctx);
 
-  RaftClient(const RaftClient&) = delete;
-  RaftClient& operator=(const RaftClient&) = delete;
+  RaftClientImpl(const RaftClientImpl&) = delete;
+  RaftClientImpl& operator=(const RaftClientImpl&) = delete;
 
   void CreateConnections(std::unordered_set<std::string> peer_addresses);
 
@@ -53,13 +53,6 @@ public:
       const int prev_log_term,
       const std::vector<protocol::log::LogEntry> entries,
       const int leader_commit);
-
-  protocol::raft::GetConfiguration_Response GetClusterConfiguration(const std::string& peer_id);
-
-  protocol::raft::SetConfiguration_Response SetClusterConfiguration(
-      const std::string& peer_id,
-      const int old_id,
-      const std::vector<protocol::log::Server> new_servers);
 
   void AsyncCompleteRPC();
 

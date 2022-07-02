@@ -30,7 +30,7 @@ void initialize_node(std::string& address, bool leader) {
     ctx.ConcensusInstance()->InitializeConfiguration();
   }
 
-  std::thread client_worker = std::thread(&raft::RaftClient::AsyncCompleteRPC, ctx.ClientInstance());
+  std::thread client_worker = std::thread(&raft::RaftClientImpl::AsyncCompleteRPC, ctx.ClientInstance());
 
   ctx.ServerInstance()->ServerInit();
 
@@ -123,6 +123,7 @@ int main(int argc, char* argv[]) {
 
   if (cluster.size() > 0 && reconfigure.size() > 0) {
     set_configuration(cluster, reconfigure);
+    exit(0);
   }
 
   if (new_address.size() > 0) {

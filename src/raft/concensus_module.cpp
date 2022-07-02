@@ -572,8 +572,9 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
     reply.set_ok(true);
     return std::make_tuple(reply, grpc::Status::OK);
   } else {
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
     reply.set_ok(false);
-    return std::make_tuple(reply, grpc::Status::CANCELLED);
+    return std::make_tuple(reply, err);
   }
 }
 

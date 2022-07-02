@@ -13,13 +13,12 @@ enum OpCode {
 
 message Error {
   enum Code {
-    OK = 0;
-    NOT_LEADER = 1;
-    RETRY = 2;
-    TIMEOUT = 3;
-    CANCELLED = 4;
-    OUT_OF_DATE = 5;
-    UNEXPECTED_ERROR = 6;
+    NOT_LEADER = 0;
+    RETRY = 1;
+    TIMEOUT = 2;
+    CANCELLED = 3;
+    OUT_OF_DATE = 4;
+    UNEXPECTED_ERROR = 5;
   }
 
   Code statusCode = 1;

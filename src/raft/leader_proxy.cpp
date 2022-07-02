@@ -34,41 +34,66 @@ void LeaderProxy::CreateConnections(std::unordered_set<std::string> peer_address
 }
 
 protocol::raft::GetConfiguration_Response LeaderProxy::GetClusterConfiguration() {
-  std::unordered_set<std::string> visited;
   protocol::raft::GetConfiguration_Response reply;
-  for (auto& peer:m_stubs) {
-    std::string address = peer.first;
-    grpc::Status status = GetConfigurationRPC(address, reply);
-    if (status.ok()) {
-      break;
-    }
-    protocol::raft::Error err;
-    err.ParseFromString(status.error_details());
-    visited.insert(address);
-  }
+  auto call = std::bind(&LeaderProxy::GetConfigurationRPC, this, std::placeholders::_1, std::ref(reply));
+  RedirectToLeader(call);
   return reply;
 }
 
 protocol::raft::SetConfiguration_Response LeaderProxy::SetClusterConfiguration(
     int cluster_id,
     const std::vector<protocol::log::Server>& new_servers) {
-  std::unordered_set<std::string> visited;
   protocol::raft::SetConfiguration_Response reply;
-  for (auto& peer:m_stubs) {
-    std::string address = peer.first;
-    grpc::Status status = SetConfigurationRPC(address, cluster_id, new_servers, reply);
-    if (status.ok()) {
-      break;
-    }
-    protocol::raft::Error err;
-    err.ParseFromString(status.error_details());
-    visited.insert(address);
-  }
+  auto call = std::bind(&LeaderProxy::SetConfigurationRPC, this, std::placeholders::_1, cluster_id, new_servers, std::ref(reply));
+  RedirectToLeader(call);
   return reply;
 }
 
+void LeaderProxy::RedirectToLeader(
+      std::function<grpc::Status(std::string)> func) {
+  std::unordered_set<std::string> visited;
+  grpc::Status status;
+  for (auto& peer:m_stubs) {
+    std::string address = peer.first;
+    if (visited.find(address) != visited.end()) {
+      continue;
+    }
+    visited.insert(address);
+
+    protocol::raft::Error err;
+    status = Retry(address, func);
+    if (status.ok()) {
+      return;
+    }
+    err.ParseFromString(status.error_details());
+
+    if (err.statuscode() == protocol::raft::Error::NOT_LEADER &&
+        err.leaderhint().size() > 0 &&
+        visited.find(err.leaderhint()) == visited.end()) {
+      status = Retry(err.leaderhint(), func);
+      visited.insert(err.leaderhint());
+    }
+  }
+}
+
+grpc::Status LeaderProxy::Retry(
+    std::string address,
+    std::function<grpc::Status(std::string)> func) {
+  protocol::raft::Error err;
+  grpc::Status status;
+  err.set_statuscode(protocol::raft::Error::RETRY);
+  while (err.statuscode() == protocol::raft::Error::RETRY) {
+    status = func(address);
+    if (status.ok()) {
+      return status;
+    }
+    err.ParseFromString(status.error_details());
+  }
+  return status;
+}
+
 grpc::Status LeaderProxy::GetConfigurationRPC(
-    std::string& peer_id,
+    std::string peer_id,
     protocol::raft::GetConfiguration_Response& reply) {
   grpc::ClientContext ctx;
   protocol::raft::GetConfiguration_Request request_args;
@@ -79,7 +104,7 @@ grpc::Status LeaderProxy::GetConfigurationRPC(
 }
 
 grpc::Status LeaderProxy::SetConfigurationRPC(
-    std::string& peer_id,
+    std::string peer_id,
     int cluster_id,
     const std::vector<protocol::log::Server>& new_servers,
     protocol::raft::SetConfiguration_Response& reply) {
