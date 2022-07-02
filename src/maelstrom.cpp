@@ -21,13 +21,13 @@ std::vector<std::string> comma_separated_string(std::string address_str) {
   return peers;
 }
 
-void initialize_node(std::string& address, std::vector<std::string>& peers, bool leader) {
+void initialize_node(std::string& address, bool leader) {
   Logger::Info("Initializing...");
 
   raft::GlobalCtxManager ctx(address);
   ctx.ConcensusInstance()->StateMachineInit(2);
   if (leader) {
-    ctx.ConcensusInstance()->InitializeConfiguration(peers);
+    ctx.ConcensusInstance()->InitializeConfiguration();
   }
 
   std::thread client_worker = std::thread(&raft::RaftClient::AsyncCompleteRPC, ctx.ClientInstance());
@@ -52,11 +52,19 @@ void set_configuration(
   for (auto server:cluster.servers()) {
     std::cout << server.address() << " ";
   }
+
+  std::vector<protocol::log::Server> servers;
   std::cout << "\nNew configuration: ";
   for (auto address:new_addresses) {
     std::cout << address << " ";
+    protocol::log::Server server;
+    server.set_address(address);
+    servers.push_back(server);
   }
   std::cout << "\n";
+
+  auto membership_change = proxy.SetClusterConfiguration(cluster.id(), servers);
+  std::cout << "Membership result OK? " << (membership_change.ok() ? "Yes" : "No") << "\n";
 }
 
 void help() {
@@ -64,12 +72,6 @@ void help() {
 }
 
 int main(int argc, char* argv[]) {
-  std::string address(argv[1]);
-  std::vector<std::string> peer_ids{};
-  for (int i = 2; i < argc; i++) {
-    peer_ids.push_back(argv[i]);
-  }
-
   Logger::SetLevel(Logger::LogLevel::DEBUG);
   Logger::SetLogConsole();
 
@@ -86,7 +88,7 @@ int main(int argc, char* argv[]) {
   std::vector<std::string> reconfigure;
   bool initialize_as_leader = false;
   while (true) {
-    int c = getopt_long(argc, argv, "c:r:h", long_options, NULL);
+    int c = getopt_long(argc, argv, "n:c:r:lh", long_options, NULL);
 
     if (c == -1) {
       break;
@@ -104,6 +106,7 @@ int main(int argc, char* argv[]) {
         break;
       case 'l':
         initialize_as_leader = true;
+        break;
       case 'h':
         help();
         exit(0);
@@ -123,7 +126,7 @@ int main(int argc, char* argv[]) {
   }
 
   if (new_address.size() > 0) {
-    initialize_node(new_address, cluster, initialize_as_leader);
+    initialize_node(new_address, initialize_as_leader);
   }
 
   return 0;

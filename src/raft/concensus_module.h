@@ -75,7 +75,7 @@ public:
    */
   void StateMachineInit(int delay = 0);
 
-  void InitializeConfiguration(std::vector<std::string>& peer_addresses);
+  void InitializeConfiguration();
 
   /**
    * Retrieve raft term of node.
@@ -307,6 +307,8 @@ private:
    * RPCs from nodes that have been removed from the cluster configuration.
    */
   time_point m_election_deadline;
+
+  std::condition_variable m_replicate;
 };
 
 }

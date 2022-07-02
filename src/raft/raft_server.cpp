@@ -40,6 +40,8 @@ void RaftServer::ServerInit() {
 void RaftServer::RPCEventLoop() {
   new RaftServer::RequestVoteData(m_ctx, &m_service, m_scq.get());
   new RaftServer::AppendEntriesData(m_ctx, &m_service, m_scq.get());
+  new RaftServer::GetConfigurationData(m_ctx, &m_service, m_scq.get());
+  new RaftServer::SetConfigurationData(m_ctx, &m_service, m_scq.get());
 
   void* tag;
   bool ok;
@@ -211,7 +213,7 @@ void RaftServer::GetConfigurationData::Proceed() {
       break;
     }
     case CallStatus::PROCESS: {
-      Logger::Debug("Processing SetConfiguration reply...");
+      Logger::Debug("Processing GetConfiguration reply...");
       new GetConfigurationData(m_ctx, m_service, m_scq);
 
       auto [m_response, s] = m_ctx.ConcensusInstance()->ProcessGetConfigurationClientRequest();
