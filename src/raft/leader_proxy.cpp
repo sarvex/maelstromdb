@@ -3,31 +3,11 @@
 namespace raft {
 
 LeaderProxy::LeaderProxy(const std::vector<std::string>& peers) {
-  std::unordered_set<std::string> addresses;
-  for (auto& peer:peers) {
-    addresses.insert(peer);
-  }
-  CreateConnections(addresses);
+  CreateConnections(peers);
 }
 
-void LeaderProxy::CreateConnections(std::unordered_set<std::string> peer_addresses) {
-  std::vector<std::string> new_addresses;
-  std::vector<std::string> removed_addresses;
-  for (auto& peer_id:peer_addresses) {
-    if (m_stubs.find(peer_id) == m_stubs.end()) {
-      new_addresses.push_back(peer_id);
-    }
-  }
-  for (auto& connection:m_stubs) {
-    if (peer_addresses.find(connection.first) == peer_addresses.end()) {
-      removed_addresses.push_back(connection.first);
-    }
-  }
-
-  for (auto& address:removed_addresses) {
-    m_stubs.erase(address);
-  }
-  for (auto& address:new_addresses) {
+void LeaderProxy::CreateConnections(std::vector<std::string> peer_addresses) {
+  for (auto& address:peer_addresses) {
     std::shared_ptr<grpc::Channel> chan = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
     m_stubs[address] = protocol::raft::RaftService::NewStub(chan);
   }

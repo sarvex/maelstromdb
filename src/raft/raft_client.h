@@ -16,10 +16,39 @@ namespace raft {
 
 class GlobalCtxManager;
 
-class RaftClientImpl {
+class AsyncClient {
 public:
   using stub_map = std::unordered_map<std::string, std::unique_ptr<protocol::raft::RaftService::Stub>>;
 
+public:
+  AsyncClient();
+  virtual ~AsyncClient();
+
+  void CreateConnections(std::unordered_set<std::string> peer_addresses);
+
+  virtual void RequestVote(
+      const std::string& peer_id,
+      const int term,
+      const int last_log_index,
+      const int last_log_term) = 0;
+
+  virtual void AppendEntries(
+      const std::string& peer_id,
+      const int term,
+      const int prev_log_index,
+      const int prev_log_term,
+      const std::vector<protocol::log::LogEntry> entries,
+      const int leader_commit) = 0;
+
+  virtual void AsyncCompleteRPC() = 0;
+
+protected:
+  stub_map m_stubs;
+  grpc::CompletionQueue m_cq;
+};
+
+class RaftClientImpl : public AsyncClient {
+public:
   enum class ClientCommandID {
     REQUEST_VOTE,
     APPEND_ENTRIES,
@@ -38,13 +67,11 @@ public:
   RaftClientImpl(const RaftClientImpl&) = delete;
   RaftClientImpl& operator=(const RaftClientImpl&) = delete;
 
-  void CreateConnections(std::unordered_set<std::string> peer_addresses);
-
   void RequestVote(
       const std::string& peer_id,
       const int term,
       const int last_log_index,
-      const int last_log_term);
+      const int last_log_term) override;
 
   void AppendEntries(
       const std::string& peer_id,
@@ -52,9 +79,9 @@ public:
       const int prev_log_index,
       const int prev_log_term,
       const std::vector<protocol::log::LogEntry> entries,
-      const int leader_commit);
+      const int leader_commit) override;
 
-  void AsyncCompleteRPC();
+  void AsyncCompleteRPC() override;
 
 private:
   template <typename RequestType, typename ResponseType>
@@ -74,8 +101,6 @@ private:
 
 private:
   GlobalCtxManager& m_ctx;
-  stub_map m_stubs;
-  grpc::CompletionQueue m_cq;
 };
 
 }

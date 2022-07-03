@@ -20,7 +20,7 @@ public:
 public:
   LeaderProxy(const std::vector<std::string>& peers);
 
-  void CreateConnections(std::unordered_set<std::string> peer_addresses);
+  void CreateConnections(std::vector<std::string> peer_addresses);
 
   protocol::raft::GetConfiguration_Response GetClusterConfiguration();
   protocol::raft::SetConfiguration_Response SetClusterConfiguration(
