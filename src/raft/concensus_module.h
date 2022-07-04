@@ -34,7 +34,7 @@ public:
     /**
      * Indicates that this node should handle all read/write requests.
      * Only 1 node can be a LEADER in a cluster at any time.
-     * Every 50ms a LEADER will send a heartbeat message to reset election
+     * Every 200ms a LEADER will send a heartbeat message to reset election
      * timers and synchronize entries in the raft log. Resets to a FOLLOWER
      * if term is out of date (can happen if node gets
      * partitioned).
@@ -48,7 +48,7 @@ public:
      */
     CANDIDATE,
     /**
-     * Stable state running an election timer every 150-300ms. If a heartbeat message
+     * Stable state running an election timer every 450-600ms. If a heartbeat message
      * is received from the cluster LEADER the timer is reset. Otherwise, a new
      * election is started and the node is promoted to CANDIDATE.
      */
@@ -70,10 +70,8 @@ public:
    * Initializes concensus module by restoring metadata from disk and starting
    * an election timer.
    *
-   * @param delay number of seconds after which the election timer is started.
-   *    Used for debugging purposes.
    */
-  void StateMachineInit(int delay = 0);
+  void StateMachineInit();
 
   void InitializeConfiguration();
 
@@ -297,7 +295,7 @@ private:
   std::string m_leader_id;
 
   /**
-   * The randomly generated [150, 300] delay in ms after which an election will begin.
+   * The randomly generated [450, 600] delay in ms after which an election will begin.
    * Used for calculating the election deadline.
    */
   milliseconds m_election_timeout;

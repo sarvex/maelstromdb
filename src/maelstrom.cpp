@@ -25,7 +25,7 @@ void initialize_node(std::string& address, bool leader) {
   Logger::Info("Initializing...");
 
   raft::GlobalCtxManager ctx(address);
-  ctx.ConcensusInstance()->StateMachineInit(2);
+  ctx.ConcensusInstance()->StateMachineInit();
   if (leader) {
     ctx.ConcensusInstance()->InitializeConfiguration();
   }

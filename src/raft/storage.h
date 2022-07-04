@@ -11,6 +11,7 @@
 #include <fstream>
 #include <map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "async_executor.h"
@@ -22,6 +23,13 @@ namespace raft {
 class GlobalCtxManager;
 
 class Log {
+public:
+  const std::unordered_map<protocol::log::LogOpCode, std::string> OPCODE_NAME = {
+    {protocol::log::NO_OP, "NO_OP"},
+    {protocol::log::CONFIGURATION, "CONFIGURATION"},
+    {protocol::log::DATA, "DATA"}
+  };
+
 public:
   Log();
   virtual ~Log();

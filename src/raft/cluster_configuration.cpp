@@ -22,7 +22,6 @@ void ClusterConfiguration::SetConfiguration(int new_id, const protocol::log::Con
   Logger::Debug("Updating cluster configuration with id =", new_id);
   if (configuration.next_configuration().size() == 0) {
     SetState(ConfigurationState::STABLE);
-    Logger::Debug("Cluster is now stable...");
   } else {
     SetState(ConfigurationState::JOINT);
   }

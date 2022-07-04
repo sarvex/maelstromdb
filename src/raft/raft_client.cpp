@@ -48,6 +48,11 @@ void RaftClientImpl::RequestVote(
   request_args.set_lastlogindex(last_log_index);
   request_args.set_lastlogterm(last_log_term);
 
+  if (!m_stubs[peer_id]) {
+    Logger::Debug("Server at", peer_id, "disconnected");
+    return;
+  }
+
   auto* call = new AsyncClientCall<protocol::raft::RequestVote_Request, protocol::raft::RequestVote_Response>;
 
   call->request = request_args;
@@ -77,6 +82,11 @@ void RaftClientImpl::AppendEntries(
 
   for (auto& entry:entries) {
     *request_args.add_entries() = entry;
+  }
+
+  if (!m_stubs[peer_id]) {
+    Logger::Debug("Server at", peer_id, "disconnected");
+    return;
   }
 
   auto* call = new AsyncClientCall<protocol::raft::AppendEntries_Request, protocol::raft::AppendEntries_Response>;
@@ -118,6 +128,9 @@ void RaftClientImpl::AsyncCompleteRPC() {
 
         delete call;
         break;
+      }
+      default: {
+        Logger::Error("Invalid client ID");
       }
     }
 

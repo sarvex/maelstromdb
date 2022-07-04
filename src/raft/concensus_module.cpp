@@ -19,7 +19,7 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_election_deadline(clock_type::now()) {
 }
 
-void ConcensusModule::StateMachineInit(int delay) {
+void ConcensusModule::StateMachineInit() {
   // Restore raft metadata from disk if restarting node after server failure
   protocol::log::LogMetadata metadata;
   bool ok = m_ctx.LogInstance()->Metadata(metadata);
@@ -46,14 +46,12 @@ void ConcensusModule::StateMachineInit(int delay) {
     m_match_index[peer] = -1;
   }
 
-
-  std::this_thread::sleep_for(std::chrono::seconds(delay));
   m_election_timer = m_ctx.TimerQueueInstance()->CreateTimer(
-      150,
+      450,
       m_timer_executor,
       std::bind(&ConcensusModule::ElectionCallback, this, Term()));
   m_heartbeat_timer = m_ctx.TimerQueueInstance()->CreateTimer(
-      50,
+      200,
       m_timer_executor,
       std::bind(&ConcensusModule::HeartbeatCallback, this));
 }
@@ -175,7 +173,7 @@ void ConcensusModule::HeartbeatCallback() {
 void ConcensusModule::ScheduleElection(const int term) {
   std::random_device rd; // Obtain a random number from hardware
   std::mt19937 gen(rd()); // Seed the generator
-  std::uniform_int_distribution<> distr(150, 300);
+  std::uniform_int_distribution<> distr(450, 600);
   int random_timeout = distr(gen);
 
   Logger::Debug("Election timer created:", random_timeout, "ms");
@@ -238,7 +236,6 @@ void ConcensusModule::StoreState() const {
 }
 
 int ConcensusModule::Append(protocol::log::LogEntry& log_entry) {
-  Logger::Debug("Appending entry to raft log...");
   int log_index = m_ctx.LogInstance()->Append(log_entry);
   if (log_entry.has_configuration()) {
     m_configuration->InsertNewConfiguration(log_index, log_entry.configuration());

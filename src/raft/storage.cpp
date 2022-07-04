@@ -238,6 +238,7 @@ std::tuple<int, bool> PersistedLog::LatestConfiguration(protocol::log::Configura
 }
 
 int PersistedLog::Append(protocol::log::LogEntry& new_entry) {
+  Logger::Debug("Appending", OPCODE_NAME.at(new_entry.type()), "entry to raft log...");
   int log_index = LogSize();
   PersistLogEntries({new_entry});
   return log_index;
