@@ -21,7 +21,7 @@ public:
   using stub_map = std::unordered_map<std::string, std::unique_ptr<protocol::raft::RaftService::Stub>>;
 
 public:
-  AsyncClient();
+  AsyncClient(GlobalCtxManager& ctx);
   virtual ~AsyncClient();
 
   void CreateConnections(std::unordered_set<std::string> peer_addresses);
@@ -43,6 +43,7 @@ public:
   virtual void AsyncCompleteRPC() = 0;
 
 protected:
+  GlobalCtxManager& m_ctx;
   stub_map m_stubs;
   grpc::CompletionQueue m_cq;
 };
@@ -98,9 +99,6 @@ private:
 
   void HandleAppendEntriesReply(AsyncClientCall<protocol::raft::AppendEntries_Request,
       protocol::raft::AppendEntries_Response>* call);
-
-private:
-  GlobalCtxManager& m_ctx;
 };
 
 }

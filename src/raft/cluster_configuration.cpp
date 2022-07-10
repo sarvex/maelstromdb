@@ -126,15 +126,7 @@ void ClusterConfiguration::CancelLogSync() {
 
 bool ClusterConfiguration::SyncProgress() {
   std::lock_guard<std::mutex> lock(m_log_sync->sync_mutex);
-  bool progress = true;
-  for (auto& it:m_log_sync->state_diff) {
-    auto [prev_index, curr_index] = it.second;
-    if (prev_index >= curr_index) {
-      progress = false;
-      break;
-    }
-  }
-  return progress;
+  return m_log_sync->progress;
 }
 
 bool ClusterConfiguration::UpdateSyncProgress(std::string address, int new_match_index) {
@@ -146,31 +138,26 @@ bool ClusterConfiguration::UpdateSyncProgress(std::string address, int new_match
   m_log_sync->state_diff[address] = {prev_index, new_match_index};
 
   bool progress = true;
+  bool done = true;
   for (auto& it:m_log_sync->state_diff) {
     auto [prev_index, curr_index] = it.second;
     if (prev_index >= curr_index) {
       progress = false;
+      done = false;
       break;
     }
+    if (curr_index < m_log_sync->sync_index) {
+      done = false;
+    }
   }
+  m_log_sync->progress = progress;
+  m_log_sync->done = done;
   return progress;
 }
 
 bool ClusterConfiguration::SyncComplete() {
   std::lock_guard<std::mutex> lock(m_log_sync->sync_mutex);
-  bool done = true;
-  for (auto& it:m_log_sync->state_diff) {
-    auto [_, curr_index] = it.second;
-    if (curr_index < m_log_sync->sync_index) {
-      done = false;
-      break;
-    }
-  }
-  return done;
-}
-
-std::unordered_set<std::string> ClusterConfiguration::SyncServers() const {
-  return m_log_sync->sync_addresses;
+  return m_log_sync->done;
 }
 
 ClusterConfiguration::SyncState::SyncState(int commit_index, const std::vector<std::string>& new_servers)

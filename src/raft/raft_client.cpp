@@ -4,7 +4,7 @@
 
 namespace raft {
 
-AsyncClient::AsyncClient() {
+AsyncClient::AsyncClient(GlobalCtxManager& ctx) : m_ctx(ctx) {
 }
 
 AsyncClient::~AsyncClient() {
@@ -28,13 +28,16 @@ void AsyncClient::CreateConnections(std::unordered_set<std::string> peer_address
     m_stubs.erase(address);
   }
   for (auto& address:new_addresses) {
+    if (address == m_ctx.address) {
+      continue;
+    }
     std::shared_ptr<grpc::Channel> chan = grpc::CreateChannel(address, grpc::InsecureChannelCredentials());
     m_stubs[address] = protocol::raft::RaftService::NewStub(chan);
   }
 }
 
 RaftClientImpl::RaftClientImpl(GlobalCtxManager& ctx)
-  : m_ctx(ctx) {
+  : AsyncClient(ctx) {
 }
 
 void RaftClientImpl::RequestVote(

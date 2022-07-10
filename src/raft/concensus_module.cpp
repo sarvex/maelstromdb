@@ -255,6 +255,7 @@ std::pair<int, int> ConcensusModule::Append(std::vector<protocol::log::LogEntry>
     if (log_entries[i].has_configuration()) {
       int log_index = log_start + i;
       m_configuration->InsertNewConfiguration(log_index, log_entries[i].configuration());
+    m_ctx.ClientInstance()->CreateConnections(m_configuration->ServerAddresses());
     }
   }
   return {log_start, log_end};
@@ -302,6 +303,26 @@ void ConcensusModule::UpdateCommitIndex() {
 
     CommitEntries(uncommited_entries);
   }
+
+  if (m_commit_index.load() >= m_configuration->Id()) {
+    m_sync.notify_one();
+
+    if (!m_configuration->KnownServer(m_ctx.address)) {
+      Logger::Debug("Committed configuration does not include LEADER, resetting to FOLLOWER...");
+      ResetToFollower(Term() + 1);
+      return;
+    }
+
+    if (m_configuration->State() == ClusterConfiguration::ConfigurationState::JOINT) {
+      Logger::Debug("Transitioning to new cluster configuration...");
+      protocol::log::LogEntry entry;
+      entry.set_term(Term());
+      entry.set_type(protocol::log::CONFIGURATION);
+      *entry.mutable_configuration()->mutable_prev_configuration() =
+        m_configuration->Configuration().next_configuration();
+      Append(entry);
+    }
+  }
 }
 
 grpc::Status ConcensusModule::ConstructError(std::string err_msg, protocol::raft::Error::Code code) const {
@@ -322,7 +343,7 @@ std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::
   }
 
   if (clock_type::now() <= m_election_deadline || State() == RaftState::LEADER) {
-    Logger::Debug("Rejecting RequestVote RPC, since this node recently received a heartbeat");
+    Logger::Debug("Rejecting RequestVote RPC from", request.candidateid(), ", since this node recently received a heartbeat");
     reply.set_votegranted(false);
     reply.set_term(Term());
     return std::make_tuple(reply, grpc::Status::OK);
@@ -485,26 +506,6 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
       }
 
       UpdateCommitIndex();
-
-      if (m_commit_index.load() >= m_configuration->Id()) {
-        m_sync.notify_one();
-
-        if (!m_configuration->KnownServer(m_ctx.address)) {
-          Logger::Debug("Committed configuration does not include LEADER, resetting to FOLLOWER...");
-          ResetToFollower(Term() + 1);
-          return;
-        }
-
-        if (m_configuration->State() == ClusterConfiguration::ConfigurationState::JOINT) {
-          Logger::Debug("Transitioning to new cluster configuration...");
-          protocol::log::LogEntry entry;
-          entry.set_term(Term());
-          entry.set_type(protocol::log::CONFIGURATION);
-          *entry.mutable_configuration()->mutable_prev_configuration() =
-            m_configuration->Configuration().next_configuration();
-          Append(entry);
-        }
-      }
     } else {
       // If the AppendEntries RPC was unsuccessful the prevLogIndex for the specific node is decremented.
       // This will continue until a raft log entry with a matching term is found.
@@ -569,7 +570,7 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
     new_servers.push_back(server.address());
   }
   m_configuration->StartLogSync(m_commit_index, new_servers);
-  m_ctx.ClientInstance()->CreateConnections(m_configuration->SyncServers());
+  m_ctx.ClientInstance()->CreateConnections(m_configuration->ServerAddresses());
 
   while (!m_configuration->SyncComplete()) {
     if (Term() != saved_term) {

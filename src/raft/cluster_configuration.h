@@ -50,8 +50,6 @@ public:
   bool UpdateSyncProgress(std::string address, int new_match_index);
   bool SyncComplete();
 
-  std::unordered_set<std::string> SyncServers() const;
-
 private:
   struct SyncState {
     SyncState(int commit_index, const std::vector<std::string>& new_servers);
