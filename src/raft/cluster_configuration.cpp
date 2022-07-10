@@ -58,11 +58,22 @@ void ClusterConfiguration::InsertNewConfiguration(int new_id, const protocol::lo
 }
 
 std::unordered_set<std::string> ClusterConfiguration::ServerAddresses() const {
+  if (State() == ConfigurationState::SYNC) {
+    std::unordered_set<std::string> address_union(m_addresses);
+    for (auto& address:m_log_sync->sync_addresses) {
+      address_union.insert(address);
+    }
+    return address_union;
+  }
   return m_addresses;
 }
 
 bool ClusterConfiguration::KnownServer(std::string address) {
-  return m_addresses.find(address) != m_addresses.end();
+  bool found = m_addresses.find(address) != m_addresses.end();
+  if (State() == ConfigurationState::SYNC) {
+    found |= m_log_sync->sync_addresses.find(address) != m_log_sync->sync_addresses.end();
+  }
+  return found;
 }
 
 void ClusterConfiguration::TruncateSuffix(int removal_index) {
@@ -92,6 +103,81 @@ bool ClusterConfiguration::CheckQuorum(std::unordered_set<std::string> peer_vote
     return prev_majority && next_majority;
   } else {
     return peer_votes.size()*2 > m_current_configuration.prev_configuration().size();
+  }
+}
+
+void ClusterConfiguration::StartLogSync(int commit_index, const std::vector<std::string>& new_servers) {
+  Logger::Debug("Starting membership change log sync...");
+  std::vector<std::string> sync_servers;
+  for (auto& server:new_servers) {
+    if (!KnownServer(server)) {
+      sync_servers.push_back(server);
+    }
+  }
+
+  m_log_sync.reset(new SyncState(commit_index, sync_servers));
+  SetState(ConfigurationState::SYNC);
+}
+
+void ClusterConfiguration::CancelLogSync() {
+  m_log_sync.reset();
+  SetState(ConfigurationState::STABLE);
+}
+
+bool ClusterConfiguration::SyncProgress() {
+  std::lock_guard<std::mutex> lock(m_log_sync->sync_mutex);
+  bool progress = true;
+  for (auto& it:m_log_sync->state_diff) {
+    auto [prev_index, curr_index] = it.second;
+    if (prev_index >= curr_index) {
+      progress = false;
+      break;
+    }
+  }
+  return progress;
+}
+
+bool ClusterConfiguration::UpdateSyncProgress(std::string address, int new_match_index) {
+  if (m_state != ConfigurationState::SYNC) {
+    return false;
+  }
+  std::lock_guard<std::mutex> lock(m_log_sync->sync_mutex);
+  auto [prev_index, _] = m_log_sync->state_diff[address];
+  m_log_sync->state_diff[address] = {prev_index, new_match_index};
+
+  bool progress = true;
+  for (auto& it:m_log_sync->state_diff) {
+    auto [prev_index, curr_index] = it.second;
+    if (prev_index >= curr_index) {
+      progress = false;
+      break;
+    }
+  }
+  return progress;
+}
+
+bool ClusterConfiguration::SyncComplete() {
+  std::lock_guard<std::mutex> lock(m_log_sync->sync_mutex);
+  bool done = true;
+  for (auto& it:m_log_sync->state_diff) {
+    auto [_, curr_index] = it.second;
+    if (curr_index < m_log_sync->sync_index) {
+      done = false;
+      break;
+    }
+  }
+  return done;
+}
+
+std::unordered_set<std::string> ClusterConfiguration::SyncServers() const {
+  return m_log_sync->sync_addresses;
+}
+
+ClusterConfiguration::SyncState::SyncState(int commit_index, const std::vector<std::string>& new_servers)
+  : sync_index(commit_index), done(false), progress(false) {
+  for (auto& address:new_servers) {
+    state_diff[address] = {0, 0};
+    sync_addresses.insert(address);
   }
 }
 

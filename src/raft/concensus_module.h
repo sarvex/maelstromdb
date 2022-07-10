@@ -212,6 +212,8 @@ private:
 
   void CommitEntries(std::vector<protocol::log::LogEntry>& log_entries);
 
+  void UpdateCommitIndex();
+
   grpc::Status ConstructError(std::string err_msg, protocol::raft::Error::Code code) const;
 
 private:
@@ -306,7 +308,7 @@ private:
    */
   time_point m_election_deadline;
 
-  std::condition_variable m_replicate;
+  std::condition_variable m_sync;
 };
 
 }

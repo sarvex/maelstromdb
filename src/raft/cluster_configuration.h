@@ -2,6 +2,7 @@
 #define CLUSTER_CONFIGURATION_H
 
 #include <map>
+#include <mutex>
 #include <string>
 #include <unordered_set>
 
@@ -42,12 +43,34 @@ public:
 
   bool CheckQuorum(std::unordered_set<std::string> peer_votes);
 
+  void StartLogSync(int commit_index, const std::vector<std::string>& new_servers);
+  void CancelLogSync();
+
+  bool SyncProgress();
+  bool UpdateSyncProgress(std::string address, int new_match_index);
+  bool SyncComplete();
+
+  std::unordered_set<std::string> SyncServers() const;
+
+private:
+  struct SyncState {
+    SyncState(int commit_index, const std::vector<std::string>& new_servers);
+
+    int sync_index;
+    bool done;
+    bool progress;
+    std::mutex sync_mutex;
+    std::unordered_map<std::string, std::pair<int, int>> state_diff;
+    std::unordered_set<std::string> sync_addresses;
+  };
+
 private:
   int m_id;
   ConfigurationState m_state;
   protocol::log::Configuration m_current_configuration;
   std::unordered_set<std::string> m_addresses;
   std::map<int, protocol::log::Configuration> m_configurations;
+  std::unique_ptr<SyncState> m_log_sync;
 };
 
 }

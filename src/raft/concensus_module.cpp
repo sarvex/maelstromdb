@@ -16,6 +16,7 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_leader_id("")
   , m_configuration(std::make_unique<ClusterConfiguration>())
   , m_timer_executor(std::make_shared<core::Strand>())
+  , m_election_timeout(std::chrono::milliseconds(500))
   , m_election_deadline(clock_type::now()) {
 }
 
@@ -167,6 +168,10 @@ void ConcensusModule::HeartbeatCallback() {
         m_commit_index.load());
   }
 
+  if (m_configuration->ServerAddresses().size() == 1) {
+    UpdateCommitIndex();
+  }
+
   ScheduleHeartbeat();
 }
 
@@ -257,6 +262,45 @@ std::pair<int, int> ConcensusModule::Append(std::vector<protocol::log::LogEntry>
 
 void ConcensusModule::CommitEntries(std::vector<protocol::log::LogEntry>& log_entries) {
   for (int i = 0; i < log_entries.size(); i++) {
+  }
+}
+
+void ConcensusModule::UpdateCommitIndex() {
+  int saved_commit_index = m_commit_index;
+  int log_size = m_ctx.LogInstance()->LogSize();
+  auto log_entries = m_ctx.LogInstance()->Entries(saved_commit_index + 1, log_size);
+  int new_commit_index = saved_commit_index;
+  for (int i = saved_commit_index + 1; i < log_size; i++) {
+    if (log_entries[i - saved_commit_index - 1].term() == Term()) {
+      std::unordered_set<std::string> match_peers = {m_ctx.address};
+      for (auto peer:m_configuration->ServerAddresses()) {
+        if (m_match_index[peer] >= i) {
+          match_peers.insert(peer);
+        }
+      }
+
+      // Once a majority of nodes have replicated a log entry, it can be committed
+      if (m_configuration->CheckQuorum(match_peers)) {
+        new_commit_index = i;
+      }
+    }
+  }
+
+  if (new_commit_index != saved_commit_index) {
+    m_commit_index.store(new_commit_index);
+    Logger::Debug("Leader set commit_index =", new_commit_index);
+
+    int new_last_applied = m_last_applied;
+    std::vector<protocol::log::LogEntry> uncommited_entries;
+    while (new_last_applied < new_commit_index) {
+      new_last_applied++;
+
+      auto uncommited_entry = m_ctx.LogInstance()->Entry(new_last_applied);
+      uncommited_entries.push_back(uncommited_entry);
+    }
+    m_last_applied.store(new_last_applied);
+
+    CommitEntries(uncommited_entries);
   }
 }
 
@@ -436,45 +480,14 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
       m_match_index[address] = next + request.entries().size() - 1;
       Logger::Debug("AppendEntries reply from", address, "successful: next_index =", m_next_index[address], "match_index =", m_match_index[address]);
 
-      int saved_commit_index = m_commit_index;
-      int log_size = m_ctx.LogInstance()->LogSize();
-      auto log_entries = m_ctx.LogInstance()->Entries(saved_commit_index + 1, log_size);
-      int new_commit_index = saved_commit_index;
-      for (int i = saved_commit_index + 1; i < log_size; i++) {
-        if (log_entries[i - saved_commit_index - 1].term() == Term()) {
-          std::unordered_set<std::string> match_peers = {m_ctx.address};
-          for (auto peer:m_configuration->ServerAddresses()) {
-            if (m_match_index[peer] >= i) {
-              match_peers.insert(peer);
-            }
-          }
-
-          // Once a majority of nodes have replicated a log entry, it can be committed
-          if (m_configuration->CheckQuorum(match_peers)) {
-            new_commit_index = i;
-          }
-        }
+      if (m_configuration->UpdateSyncProgress(address, m_match_index[address])) {
+        m_sync.notify_one();
       }
 
-      if (new_commit_index != saved_commit_index) {
-        m_commit_index.store(new_commit_index);
-        Logger::Debug("Leader set commit_index =", new_commit_index);
-
-        int new_last_applied = m_last_applied;
-        std::vector<protocol::log::LogEntry> uncommited_entries;
-        while (new_last_applied < new_commit_index) {
-          new_last_applied++;
-
-          auto uncommited_entry = m_ctx.LogInstance()->Entry(new_last_applied);
-          uncommited_entries.push_back(uncommited_entry);
-        }
-        m_last_applied.store(new_last_applied);
-
-        CommitEntries(uncommited_entries);
-      }
+      UpdateCommitIndex();
 
       if (m_commit_index.load() >= m_configuration->Id()) {
-        m_replicate.notify_all();
+        m_sync.notify_one();
 
         if (!m_configuration->KnownServer(m_ctx.address)) {
           Logger::Debug("Committed configuration does not include LEADER, resetting to FOLLOWER...");
@@ -540,25 +553,52 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
     std::make_tuple(reply, err);
   }
 
-  // TODO: Handle syncing leader logs to new servers
-  int saved_term = Term();
-  m_configuration->SetState(ClusterConfiguration::ConfigurationState::SYNC);
-  Logger::Debug("Log syncing with new servers complete");
+  std::mutex m;
+  std::unique_lock<std::mutex> lock(m);
 
-  protocol::log::LogEntry configuration_entry;
+  int saved_term = Term();
   protocol::log::Configuration new_configuration;
-  configuration_entry.set_type(protocol::log::LogOpCode::CONFIGURATION);
   for (auto& new_server:request.new_servers()) {
     *new_configuration.add_next_configuration() = new_server;
   }
+  *new_configuration.mutable_next_configuration() = {request.new_servers().begin(), request.new_servers().end()};
   *new_configuration.mutable_prev_configuration() = m_configuration->Configuration().prev_configuration();
+
+  std::vector<std::string> new_servers;
+  for (auto& server:request.new_servers()) {
+    new_servers.push_back(server.address());
+  }
+  m_configuration->StartLogSync(m_commit_index, new_servers);
+  m_ctx.ClientInstance()->CreateConnections(m_configuration->SyncServers());
+
+  while (!m_configuration->SyncComplete()) {
+    if (Term() != saved_term) {
+      m_configuration->CancelLogSync();
+      grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+      reply.set_ok(false);
+      return std::make_tuple(reply, err);
+    }
+
+    bool progress = m_sync.wait_for(lock, m_election_timeout, [this] {
+      return m_configuration->SyncProgress();
+    });
+
+    if (!progress) {
+      m_configuration->CancelLogSync();
+      grpc::Status err = ConstructError("Peer log sync timed out", protocol::raft::Error::Code::Error_Code_TIMEOUT);
+      reply.set_ok(false);
+      return std::make_tuple(reply, err);
+    }
+  }
+  Logger::Debug("Log syncing with new servers complete");
+
+  protocol::log::LogEntry configuration_entry;
+  configuration_entry.set_type(protocol::log::LogOpCode::CONFIGURATION);
   *configuration_entry.mutable_configuration() = new_configuration;
 
   int joint_id = Append(configuration_entry);
 
-  std::mutex m;
-  std::unique_lock lock(m);
-  m_replicate.wait(lock, [this, joint_id, saved_term] {
+  m_sync.wait(lock, [this, joint_id, saved_term] {
     return (m_configuration->Id() > joint_id &&
         m_commit_index.load() >= m_configuration->Id()) ||
         Term() != saved_term;
