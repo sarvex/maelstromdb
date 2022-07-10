@@ -103,6 +103,12 @@ void ConcensusModule::ElectionCallback(const int term) {
     return;
   }
 
+  if (m_commit_index.load() >= m_configuration->Id() &&
+      !m_configuration->KnownServer(m_ctx.address)) {
+    ScheduleElection(term);
+    return;
+  }
+
   m_state.store(RaftState::CANDIDATE);
   m_term++;
   int saved_term = Term();
@@ -594,6 +600,7 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
   Logger::Debug("Log syncing with new servers complete");
 
   protocol::log::LogEntry configuration_entry;
+  configuration_entry.set_term(Term());
   configuration_entry.set_type(protocol::log::LogOpCode::CONFIGURATION);
   *configuration_entry.mutable_configuration() = new_configuration;
 
