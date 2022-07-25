@@ -18,6 +18,7 @@
 #include "cluster_configuration.h"
 #include "logger.h"
 #include "raft.grpc.pb.h"
+#include "session_cache.h"
 #include "timer.h"
 
 namespace raft {
@@ -164,6 +165,8 @@ public:
   std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ProcessSetConfigurationClientRequest(
       protocol::raft::SetConfiguration_Request& request);
 
+  std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ProcessRegisterClientClientRequest();
+
 private:
   /**
    * Callback for ScheduleElection when election timer times out. Promotes node to
@@ -210,7 +213,7 @@ private:
   int Append(protocol::log::LogEntry& log_entry);
   std::pair<int, int> Append(std::vector<protocol::log::LogEntry>& log_entries);
 
-  void CommitEntries(std::vector<protocol::log::LogEntry>& log_entries);
+  void CommitEntries(int start_index, std::vector<protocol::log::LogEntry>& log_entries);
 
   void UpdateCommitIndex();
 
@@ -308,7 +311,11 @@ private:
    */
   time_point m_election_deadline;
 
-  std::condition_variable m_sync;
+  std::unique_ptr<SessionCache> m_session;
+
+  std::condition_variable m_membership_sync;
+
+  std::condition_variable m_session_sync;
 };
 
 }

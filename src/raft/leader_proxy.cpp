@@ -29,6 +29,13 @@ protocol::raft::SetConfiguration_Response LeaderProxy::SetClusterConfiguration(
   return reply;
 }
 
+protocol::raft::RegisterClient_Response LeaderProxy::RegisterClient() {
+  protocol::raft::RegisterClient_Response reply;
+  auto call = std::bind(&LeaderProxy::RegisterClientRPC, this, std::placeholders::_1, std::ref(reply));
+  RedirectToLeader(call);
+  return reply;
+}
+
 void LeaderProxy::RedirectToLeader(
       std::function<grpc::Status(std::string)> func) {
   std::unordered_set<std::string> visited;
@@ -79,7 +86,6 @@ grpc::Status LeaderProxy::GetConfigurationRPC(
   protocol::raft::GetConfiguration_Request request_args;
 
   grpc::Status status = m_stubs[peer_id]->GetConfiguration(&ctx, request_args, &reply);
-
   return status;
 }
 
@@ -96,7 +102,16 @@ grpc::Status LeaderProxy::SetConfigurationRPC(
   }
 
   grpc::Status status = m_stubs[peer_id]->SetConfiguration(&ctx, request_args, &reply);
+  return status;
+}
 
+grpc::Status LeaderProxy::RegisterClientRPC(
+    std::string peer_id,
+    protocol::raft::RegisterClient_Response& reply) {
+  grpc::ClientContext ctx;
+  protocol::raft::RegisterClient_Request request_args;
+
+  grpc::Status status = m_stubs[peer_id]->RegisterClient(&ctx, request_args, &reply);
   return status;
 }
 

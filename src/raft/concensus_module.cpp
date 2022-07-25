@@ -17,7 +17,8 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_configuration(std::make_unique<ClusterConfiguration>())
   , m_timer_executor(std::make_shared<core::Strand>())
   , m_election_timeout(std::chrono::milliseconds(500))
-  , m_election_deadline(clock_type::now()) {
+  , m_election_deadline(clock_type::now())
+  , m_session(std::make_unique<SessionCache>(1000)) {
 }
 
 void ConcensusModule::StateMachineInit() {
@@ -267,8 +268,12 @@ std::pair<int, int> ConcensusModule::Append(std::vector<protocol::log::LogEntry>
   return {log_start, log_end};
 }
 
-void ConcensusModule::CommitEntries(std::vector<protocol::log::LogEntry>& log_entries) {
+void ConcensusModule::CommitEntries(int start_index, std::vector<protocol::log::LogEntry>& log_entries) {
   for (int i = 0; i < log_entries.size(); i++) {
+    if (log_entries[i].type() == protocol::log::LogOpCode::REGISTER_CLIENT) {
+      m_session->AddSession(start_index + i + 1);
+      m_session_sync.notify_one();
+    }
   }
 }
 
@@ -307,11 +312,11 @@ void ConcensusModule::UpdateCommitIndex() {
     }
     m_last_applied.store(new_last_applied);
 
-    CommitEntries(uncommited_entries);
+    CommitEntries(saved_commit_index, uncommited_entries);
   }
 
   if (m_commit_index.load() >= m_configuration->Id()) {
-    m_sync.notify_one();
+    m_membership_sync.notify_one();
 
     if (!m_configuration->KnownServer(m_ctx.address)) {
       Logger::Debug("Committed configuration does not include LEADER, resetting to FOLLOWER...");
@@ -462,6 +467,7 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
 
       // Commits log entries that have been committed by the LEADER
       if (request.leadercommit() > m_commit_index) {
+        int saved_commit_index = m_commit_index.load();
         int new_commit_index = std::min((int)request.leadercommit(), m_ctx.LogInstance()->LogSize());
         m_commit_index.store(new_commit_index);
         Logger::Debug("Setting commit index =", new_commit_index);
@@ -475,7 +481,7 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
         }
         m_last_applied.store(new_last_applied);
 
-        CommitEntries(uncommited_entries);
+        CommitEntries(saved_commit_index, uncommited_entries);
       }
     }
   }
@@ -508,7 +514,7 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
       Logger::Debug("AppendEntries reply from", address, "successful: next_index =", m_next_index[address], "match_index =", m_match_index[address]);
 
       if (m_configuration->UpdateSyncProgress(address, m_match_index[address])) {
-        m_sync.notify_one();
+        m_membership_sync.notify_one();
       }
 
       UpdateCommitIndex();
@@ -586,7 +592,7 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
       return std::make_tuple(reply, err);
     }
 
-    bool progress = m_sync.wait_for(lock, m_election_timeout, [this] {
+    bool progress = m_membership_sync.wait_for(lock, m_election_timeout, [this] {
       return m_configuration->SyncProgress();
     });
 
@@ -606,7 +612,7 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
 
   int joint_id = Append(configuration_entry);
 
-  m_sync.wait(lock, [this, joint_id, saved_term] {
+  m_membership_sync.wait(lock, [this, joint_id, saved_term] {
     return (m_configuration->Id() > joint_id &&
         m_commit_index.load() >= m_configuration->Id()) ||
         Term() != saved_term;
@@ -619,6 +625,39 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
   } else {
     grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
     reply.set_ok(false);
+    return std::make_tuple(reply, err);
+  }
+}
+
+std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ConcensusModule::ProcessRegisterClientClientRequest() {
+  protocol::raft::RegisterClient_Response reply;
+  if (State() != RaftState::LEADER) {
+    reply.set_status(false);
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    return std::make_tuple(reply, err);
+  }
+
+  std::mutex m;
+  std::unique_lock<std::mutex> lock(m);
+
+  int saved_term = Term();
+  protocol::log::LogEntry session_entry;
+  session_entry.set_term(saved_term);
+  session_entry.set_type(protocol::log::LogOpCode::REGISTER_CLIENT);
+  int session_id = Append(session_entry);
+
+  m_session_sync.wait(lock, [this, session_id, saved_term] {
+      return m_commit_index.load() >= session_id || Term() != saved_term;
+  });
+
+  if (m_commit_index.load() >= session_id) {
+    Logger::Debug("RegisterClient log entry committed successfully");
+    reply.set_clientid(session_id);
+    reply.set_status(true);
+    return std::make_tuple(reply, grpc::Status::OK);
+  } else {
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    reply.set_status(false);
     return std::make_tuple(reply, err);
   }
 }

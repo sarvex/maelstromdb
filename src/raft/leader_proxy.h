@@ -27,6 +27,8 @@ public:
       int cluster_id,
       const std::vector<protocol::log::Server>& new_servers);
 
+  protocol::raft::RegisterClient_Response RegisterClient();
+
 private:
   void RedirectToLeader(
       std::function<grpc::Status(std::string)> func);
@@ -43,6 +45,10 @@ private:
       int cluster_id,
       const std::vector<protocol::log::Server>& new_servers,
       protocol::raft::SetConfiguration_Response& reply);
+
+  grpc::Status RegisterClientRPC(
+      std::string peer_id,
+      protocol::raft::RegisterClient_Response& reply);
 
 private:
   std::string m_leader_hint;

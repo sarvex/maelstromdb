@@ -5,7 +5,8 @@ package protocol.log;
 enum LogOpCode {
   NO_OP = 0;
   CONFIGURATION = 1;
-  DATA = 2;
+  REGISTER_CLIENT = 2;
+  DATA = 3;
 }
 
 message Server {

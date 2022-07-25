@@ -65,6 +65,10 @@ void RaftServerImpl::RPCEventLoop() {
           static_cast<RaftServerImpl::SetConfigurationData*>(tag_ptr->call)->Proceed();
           break;
         }
+        case RaftClientImpl::ClientCommandID::REGISTER_CLIENT: {
+          static_cast<RaftServerImpl::RegisterClientData*>(tag_ptr->call)->Proceed();
+          break;
+        }
       }    
     } else {
       Logger::Info("RPC call failed unexpectedly");

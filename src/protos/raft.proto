@@ -9,6 +9,7 @@ enum OpCode {
   APPEND_ENTRIES = 1;
   GET_CONFIGURATION = 2;
   SET_CONFIGURATION = 3;
+  REGISTER_CLIENT = 4;
 }
 
 message Error {
@@ -18,7 +19,8 @@ message Error {
     TIMEOUT = 2;
     CANCELLED = 3;
     OUT_OF_DATE = 4;
-    UNEXPECTED_ERROR = 5;
+    SESSION_EXPIRED = 5;
+    UNEXPECTED_ERROR = 6;
   }
 
   Code statusCode = 1;
@@ -76,10 +78,50 @@ message SetConfiguration {
   }
 }
 
+message RegisterClient {
+  message Request {
+  }
+
+  message Response {
+    bool status = 1;
+    int64 clientId = 2;
+    string leaderHint = 3;
+  }
+}
+
+message ClientRequest {
+  message Request {
+    int64 clientId = 1;
+    int64 sequenceNum = 2;
+    bytes command = 3;
+  }
+
+  message Response {
+    bool status = 1;
+    bytes response = 2;
+    string leaderHint = 3;
+  }
+}
+
+message ClientQuery {
+  message Request {
+    bytes query = 1;
+  }
+
+  message Response {
+    bool status = 1;
+    int64 clientId = 2;
+    string leaderHint = 3;
+  }
+}
+
 service RaftService {
   rpc RequestVote (RequestVote.Request) returns (RequestVote.Response) {}
   rpc AppendEntries (AppendEntries.Request) returns (AppendEntries.Response) {}
   rpc GetConfiguration (GetConfiguration.Request) returns (GetConfiguration.Response) {}
   rpc SetConfiguration (SetConfiguration.Request) returns (SetConfiguration.Response) {}
+  rpc RegisterClient (RegisterClient.Request) returns (RegisterClient.Response) {}
+  rpc ClientRequest (ClientRequest.Request) returns (ClientRequest.Response) {}
+  rpc ClientQuery (ClientQuery.Request) returns (ClientQuery.Response) {}
 }
 
