@@ -117,8 +117,8 @@ std::string PersistedLog::Page::ClosedFilename() const {
 
 PersistedLog::PersistedLog(
     const std::string& parent_dir,
-    const int max_file_size,
-    bool restore)
+    bool restore,
+    const int max_file_size)
   : Log()
   , m_dir(parent_dir)
   , m_max_file_size(max_file_size)

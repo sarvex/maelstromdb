@@ -126,8 +126,8 @@ class PersistedLog : public Log {
 public:
   PersistedLog(
       const std::string& parent_dir,
-      const int max_file_size = 1024*8,
-      bool restore=false);
+      bool restore=false,
+      const int max_file_size = 1024*8);
 
   bool Metadata(protocol::log::LogMetadata& metadata) const override;
   void SetMetadata(protocol::log::LogMetadata& metadata) override;

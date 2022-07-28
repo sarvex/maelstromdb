@@ -14,6 +14,7 @@ protected:
     Logger::SetLevel(Logger::LogLevel::DEBUG);
     log = std::make_unique<PersistedLog>(
         std::filesystem::current_path().string() + "/test_log/",
+        false,
         max_file_size);
     entry_count = count;
 
@@ -66,6 +67,7 @@ protected:
     
     log.reset(new PersistedLog(
           std::filesystem::current_path().string() + "/test_log/",
+          true,
           max_file_size));
   }
 };
@@ -128,7 +130,7 @@ TEST_F(MetadataTest, ValidateMetadataOnDisk) {
 
   // Calling constructor causes data to be restored from disk
   log.reset(new PersistedLog(
-        std::filesystem::current_path().string() + "/test_log/"));
+        std::filesystem::current_path().string() + "/test_log/", true));
   protocol::log::LogMetadata result_metadata;
   bool valid = log->Metadata(result_metadata);
 
