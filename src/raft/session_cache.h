@@ -17,22 +17,32 @@ public:
 
   void AddSession(int client_id);
 
-  void SearchSession(int client_id, protocol::raft::RegisterClient_Response& reply);
+  void CacheResponse(
+      int client_id, int sequence_num, protocol::raft::ClientRequest_Response& reply);
+
+  bool GetCachedResponse(
+      int client_id, int sequence_num, protocol::raft::ClientRequest_Response& reply);
+
+  bool SessionExists(int client_id);
 
 private:
-  template <typename T>
-  class LRUCache {
+  class ClientRequestLRUCache {
   public:
-    LRUCache(int capacity);
+    ClientRequestLRUCache(int capacity);
 
-    T Get(int client_id, protocol::raft::RegisterClient_Response& reply);
-    void Set(int client_id, T& reply);
+    void CreateNode(int client_id);
+
+    protocol::raft::ClientRequest_Response NodeValue(int client_id, int sequence_num);
+    void UpdateNode(
+        int client_id, int sequence_num, protocol::raft::ClientRequest_Response& reply);
+
+    bool NodeExists(int client_id);
 
   private:
     struct LRUNode {
-      LRUNode(T& val);
+      LRUNode();
 
-      T val;
+      std::unordered_map<int, protocol::raft::ClientRequest_Response> val;
       std::shared_ptr<LRUNode> prev;
       std::shared_ptr<LRUNode> next;
     };
@@ -47,35 +57,8 @@ private:
   };
 
 private:
-  LRUCache<protocol::raft::RegisterClient_Response> m_session_cache;
+  ClientRequestLRUCache m_session_cache;
 };
-
-template <typename T>
-SessionCache::LRUCache<T>::LRUCache(int capacity)
-  : m_capacity(capacity)
-  , m_size(0) {
-  // m_head = new LRUNode(-1);
-  // m_tail = new LRUNode(-1);
-  // m_head->next = m_tail;
-  // m_tail->prev = m_head;
-}
-
-template <typename T>
-T SessionCache::LRUCache<T>::Get(int client_id, protocol::raft::RegisterClient_Response& reply) {
-  std::lock_guard<std::mutex> guard(m_lock);
-  return m_cache.at(client_id)->val;
-}
-
-template <typename T>
-void SessionCache::LRUCache<T>::Set(int client_id, T& reply) {
-  std::lock_guard<std::mutex> guard(m_lock);
-  m_cache[client_id] = std::make_shared<LRUNode>(reply);
-}
-
-template <typename T>
-SessionCache::LRUCache<T>::LRUNode::LRUNode(T& val)
-  : val(val), prev(nullptr), next(nullptr) {
-}
 
 }
 

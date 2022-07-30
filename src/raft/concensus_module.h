@@ -167,6 +167,9 @@ public:
 
   std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ProcessRegisterClientClientRequest();
 
+  std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ProcessClientRequestClientRequest(
+      protocol::raft::ClientRequest_Request& request);
+
 private:
   /**
    * Callback for ScheduleElection when election timer times out. Promotes node to
@@ -316,6 +319,8 @@ private:
   std::condition_variable m_membership_sync;
 
   std::condition_variable m_session_sync;
+
+  std::condition_variable m_write_command_sync;
 };
 
 }

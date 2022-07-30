@@ -28,6 +28,10 @@ public:
       const std::vector<protocol::log::Server>& new_servers);
 
   protocol::raft::RegisterClient_Response RegisterClient();
+  protocol::raft::ClientRequest_Response ClientRequest(
+      int client_id,
+      int sequence_num,
+      std::string command);
 
 private:
   void RedirectToLeader(
@@ -49,6 +53,12 @@ private:
   grpc::Status RegisterClientRPC(
       std::string peer_id,
       protocol::raft::RegisterClient_Response& reply);
+  grpc::Status ClientRequestRPC(
+      std::string peer_id,
+      int client_id,
+      int sequence_num,
+      std::string command,
+      protocol::raft::ClientRequest_Response& reply);
 
 private:
   std::string m_leader_hint;

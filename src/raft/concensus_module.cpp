@@ -273,6 +273,8 @@ void ConcensusModule::CommitEntries(int start_index, std::vector<protocol::log::
     if (log_entries[i].type() == protocol::log::LogOpCode::REGISTER_CLIENT) {
       m_session->AddSession(start_index + i + 1);
       m_session_sync.notify_one();
+    } else if (log_entries[i].type() == protocol::log::LogOpCode::DATA) {
+      m_write_command_sync.notify_one();
     }
   }
 }
@@ -660,6 +662,47 @@ std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ConcensusModul
     reply.set_status(false);
     return std::make_tuple(reply, err);
   }
+}
+
+std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule::ProcessClientRequestClientRequest(
+    protocol::raft::ClientRequest_Request& request) {
+  protocol::raft::ClientRequest_Response reply;
+  if (State() != RaftState::LEADER) {
+    reply.set_status(false);
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    return std::make_tuple(reply, err);
+  }
+
+  std::mutex m;
+  std::unique_lock<std::mutex> lock(m);
+
+  int saved_term = Term();
+  protocol::log::LogEntry write_entry;
+  write_entry.set_term(saved_term);
+  write_entry.set_type(protocol::log::LogOpCode::DATA);
+  write_entry.set_data(request.command());
+  int write_id = Append(write_entry);
+
+  m_write_command_sync.wait(lock, [this, write_id, saved_term] {
+      return m_commit_index.load() >= write_id || Term() != saved_term;
+  });
+
+  if (Term() != saved_term) {
+    reply.set_status(false);
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    return std::make_tuple(reply, err);
+  }
+
+  if (!m_session->SessionExists(request.clientid())) {
+    reply.set_status(false);
+    grpc::Status err = ConstructError("Client session has expired", protocol::raft::Error::Code::Error_Code_SESSION_EXPIRED);
+    return std::make_tuple(reply, err);
+  } else if (m_session->GetCachedResponse(request.clientid(), request.sequencenum(), reply)) {
+    return std::make_tuple(reply, grpc::Status::OK);
+  }
+
+  // TODO: Apply write command to state machine and save the response in the session cache
+  return std::make_tuple(reply, grpc::Status::OK);
 }
 
 }

@@ -10,6 +10,7 @@ enum OpCode {
   GET_CONFIGURATION = 2;
   SET_CONFIGURATION = 3;
   REGISTER_CLIENT = 4;
+  CLIENT_REQUEST = 5;
 }
 
 message Error {

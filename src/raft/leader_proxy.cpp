@@ -36,6 +36,17 @@ protocol::raft::RegisterClient_Response LeaderProxy::RegisterClient() {
   return reply;
 }
 
+protocol::raft::ClientRequest_Response LeaderProxy::ClientRequest(
+    int client_id,
+    int sequence_num,
+    std::string command) {
+  protocol::raft::ClientRequest_Response reply;
+  auto call = std::bind(&LeaderProxy::ClientRequestRPC, this, std::placeholders::_1,
+                        client_id, sequence_num, command, std::ref(reply));
+  RedirectToLeader(call);
+  return reply;
+}
+
 void LeaderProxy::RedirectToLeader(
       std::function<grpc::Status(std::string)> func) {
   std::unordered_set<std::string> visited;
@@ -112,6 +123,22 @@ grpc::Status LeaderProxy::RegisterClientRPC(
   protocol::raft::RegisterClient_Request request_args;
 
   grpc::Status status = m_stubs[peer_id]->RegisterClient(&ctx, request_args, &reply);
+  return status;
+}
+
+grpc::Status LeaderProxy::ClientRequestRPC(
+    std::string peer_id,
+    int client_id,
+    int sequence_num,
+    std::string command,
+    protocol::raft::ClientRequest_Response& reply) {
+  grpc::ClientContext ctx;
+  protocol::raft::ClientRequest_Request request_args;
+  request_args.set_clientid(client_id);
+  request_args.set_sequencenum(sequence_num);
+  request_args.set_command(command);
+
+  grpc::Status status = m_stubs[peer_id]->ClientRequest(&ctx, request_args, &reply);
   return status;
 }
 
