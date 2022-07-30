@@ -1,7 +1,8 @@
 add_executable(
   raft_test
   raft/concensus_module_test.cpp
-  raft/storage_test.cpp)
+  raft/storage_test.cpp
+  raft/session_cache_test.cpp)
 target_link_libraries(raft_test
   PRIVATE
   gmock

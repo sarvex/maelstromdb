@@ -40,12 +40,16 @@ private:
 
   private:
     struct LRUNode {
-      LRUNode();
+      LRUNode(int id);
 
       std::unordered_map<int, protocol::raft::ClientRequest_Response> val;
       std::shared_ptr<LRUNode> prev;
       std::shared_ptr<LRUNode> next;
+      int id;
     };
+
+    void PushHead(std::shared_ptr<LRUNode> curr);
+    void EraseTail();
 
   private:
     int m_capacity;
