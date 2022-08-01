@@ -161,6 +161,22 @@ public:
     RaftClientImpl::Tag m_tag;
   };
 
+  class ClientQueryData: public CallData {
+  public:
+    ClientQueryData(
+        GlobalCtxManager& ctx,
+        protocol::raft::RaftService::AsyncService* service,
+        grpc::ServerCompletionQueue* scq);
+
+    void Proceed() override;
+
+  private:
+    protocol::raft::ClientQuery_Request m_request;
+    protocol::raft::ClientQuery_Request  m_response;
+    grpc::ServerAsyncResponseWriter<protocol::raft::ClientQuery_Response> m_responder;
+    RaftClientImpl::Tag m_tag;
+  };
+
 private:
   protocol::raft::RaftService::AsyncService m_service;
 };

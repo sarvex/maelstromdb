@@ -32,6 +32,7 @@ public:
       int client_id,
       int sequence_num,
       std::string command);
+  protocol::raft::ClientQuery_Response ClientQuery(std::string query);
 
 private:
   void RedirectToLeader(
@@ -59,6 +60,10 @@ private:
       int sequence_num,
       std::string command,
       protocol::raft::ClientRequest_Response& reply);
+  grpc::Status ClientQueryRPC(
+      std::string peer_id,
+      std::string query,
+      protocol::raft::ClientQuery_Response& reply);
 
 private:
   std::string m_leader_hint;

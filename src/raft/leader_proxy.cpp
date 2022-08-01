@@ -47,6 +47,14 @@ protocol::raft::ClientRequest_Response LeaderProxy::ClientRequest(
   return reply;
 }
 
+protocol::raft::ClientQuery_Response LeaderProxy::ClientQuery(std::string query)
+{
+  protocol::raft::ClientQuery_Response reply;
+  auto call = std::bind(&LeaderProxy::ClientQueryRPC, this, std::placeholders::_1, query, std::ref(reply));
+  RedirectToLeader(call);
+  return reply;
+}
+
 void LeaderProxy::RedirectToLeader(
       std::function<grpc::Status(std::string)> func) {
   std::unordered_set<std::string> visited;
@@ -139,6 +147,18 @@ grpc::Status LeaderProxy::ClientRequestRPC(
   request_args.set_command(command);
 
   grpc::Status status = m_stubs[peer_id]->ClientRequest(&ctx, request_args, &reply);
+  return status;
+}
+
+grpc::Status LeaderProxy::ClientQueryRPC(
+    std::string peer_id,
+    std::string query,
+    protocol::raft::ClientQuery_Response& reply) {
+  grpc::ClientContext ctx;
+  protocol::raft::ClientQuery_Request request_args;
+  request_args.set_query(query);
+
+  grpc::Status status = m_stubs[peer_id]->ClientQuery(&ctx, request_args, &reply);
   return status;
 }
 

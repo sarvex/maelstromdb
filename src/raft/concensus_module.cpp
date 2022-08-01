@@ -270,12 +270,26 @@ std::pair<int, int> ConcensusModule::Append(std::vector<protocol::log::LogEntry>
 
 void ConcensusModule::CommitEntries(int start_index, std::vector<protocol::log::LogEntry>& log_entries) {
   for (int i = 0; i < log_entries.size(); i++) {
-    if (log_entries[i].type() == protocol::log::LogOpCode::REGISTER_CLIENT) {
-      m_session->AddSession(start_index + i + 1);
-      m_session_sync.notify_one();
-    } else if (log_entries[i].type() == protocol::log::LogOpCode::DATA) {
-      m_write_command_sync.notify_one();
+    switch (log_entries[i].type()) {
+      case protocol::log::LogOpCode::NO_OP: {
+        m_noop_sync.notify_all();
+        break;
+      }
+      case protocol::log::LogOpCode::DATA: {
+        m_write_command_sync.notify_one();
+        break;
+      }
+      case protocol::log::LogOpCode::REGISTER_CLIENT: {
+        m_session->AddSession(start_index + i + 1);
+        m_session_sync.notify_one();
+        break;
+      }
+      default: {
+      }
     }
+
+    m_last_applied++;
+    m_applied_sync.notify_all();
   }
 }
 
@@ -312,7 +326,6 @@ void ConcensusModule::UpdateCommitIndex() {
       auto uncommited_entry = m_ctx.LogInstance()->Entry(new_last_applied);
       uncommited_entries.push_back(uncommited_entry);
     }
-    m_last_applied.store(new_last_applied);
 
     CommitEntries(saved_commit_index, uncommited_entries);
   }
@@ -510,6 +523,12 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
   if (State() == RaftState::LEADER && reply.term() == Term()) {
     int next = m_next_index[address];
     if (reply.success()) {
+      // If heartbeat is successful for majority, reads can be served
+      m_responding_peers.insert(address);
+      if (m_configuration->CheckQuorum(m_responding_peers)) {
+        m_heartbeat_sync.notify_all();
+        m_responding_peers.clear();
+      }
       // Update next and match index since all entries in request were replicated on FOLLOWER
       m_next_index[address] = next + request.entries().size();
       m_match_index[address] = next + request.entries().size() - 1;
@@ -702,6 +721,60 @@ std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule
   }
 
   // TODO: Apply write command to state machine and save the response in the session cache
+  return std::make_tuple(reply, grpc::Status::OK);
+}
+
+std::tuple<protocol::raft::ClientQuery_Response, grpc::Status> ConcensusModule::ProcessClientQueryClientRequest(
+    protocol::raft::ClientQuery_Request& request) {
+  protocol::raft::ClientQuery_Response reply;
+  if (State() != RaftState::LEADER) {
+    reply.set_status(false);
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    return std::make_tuple(reply, err);
+  }
+
+  std::mutex m;
+  std::unique_lock<std::mutex> lock(m);
+  int saved_term = Term();
+
+  // Wait until the LEADER has committed an entry to avoid a stale read
+  if (m_ctx.LogInstance()->LastLogTerm() < Term()) {
+    int last_log_index = m_ctx.LogInstance()->LastLogIndex();
+    m_noop_sync.wait(lock, [this, saved_term, last_log_index] {
+        return m_commit_index.load() >= last_log_index || Term() != saved_term;
+    });
+
+    if (Term() != saved_term) {
+      reply.set_status(false);
+      grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+      return std::make_tuple(reply, err);
+    }
+  }
+
+  int read_index = m_commit_index.load();
+  m_heartbeat_sync.wait(lock, [this, read_index, saved_term] {
+      return m_commit_index.load() >= read_index || Term() != saved_term;
+  });
+
+  if (Term() != saved_term) {
+    reply.set_status(false);
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    return std::make_tuple(reply, err);
+  }
+
+  if (m_last_applied.load() < read_index) {
+    m_applied_sync.wait(lock, [this, read_index, saved_term] {
+        return m_last_applied.load() >= read_index || Term() != saved_term;
+    });
+  }
+
+  if (Term() != saved_term) {
+    reply.set_status(false);
+    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    return std::make_tuple(reply, err);
+  }
+
+  // TODO: Process query
   return std::make_tuple(reply, grpc::Status::OK);
 }
 

@@ -42,6 +42,8 @@ void RaftServerImpl::RPCEventLoop() {
   new RaftServerImpl::AppendEntriesData(m_ctx, &m_service, m_scq.get());
   new RaftServerImpl::GetConfigurationData(m_ctx, &m_service, m_scq.get());
   new RaftServerImpl::SetConfigurationData(m_ctx, &m_service, m_scq.get());
+  new RaftServerImpl::ClientRequestData(m_ctx, &m_service, m_scq.get());
+  new RaftServerImpl::ClientQueryData(m_ctx, &m_service, m_scq.get());
 
   void* tag;
   bool ok;
@@ -71,6 +73,10 @@ void RaftServerImpl::RPCEventLoop() {
         }
         case RaftClientImpl::ClientCommandID::CLIENT_REQUEST: {
           static_cast<RaftServerImpl::ClientRequestData*>(tag_ptr->call)->Proceed();
+          break;
+        }
+        case RaftClientImpl::ClientCommandID::CLIENT_QUERY: {
+          static_cast<RaftServerImpl::ClientQueryData*>(tag_ptr->call)->Proceed();
           break;
         }
       }    
@@ -260,7 +266,7 @@ void RaftServerImpl::ClientRequestData::Proceed() {
       break;
     }
     case CallStatus::PROCESS: {
-      Logger::Debug("Processing GetConfiguration reply...");
+      Logger::Debug("Processing ClientRequest reply...");
       new ClientRequestData(m_ctx, m_service, m_scq);
 
       auto [m_response, s] = m_ctx.ConcensusInstance()->ProcessClientRequestClientRequest(m_request);
@@ -274,6 +280,46 @@ void RaftServerImpl::ClientRequestData::Proceed() {
     }
   }
 }
+
+RaftServerImpl::ClientQueryData::ClientQueryData(
+    GlobalCtxManager& ctx,
+    protocol::raft::RaftService::AsyncService* service,
+    grpc::ServerCompletionQueue* scq)
+  : CallData(ctx, service, scq), m_responder(&m_server_ctx) {
+  m_tag.id = RaftClientImpl::ClientCommandID::CLIENT_QUERY;
+  m_tag.call = this;
+  Proceed();
+}
+
+void RaftServerImpl::ClientQueryData::Proceed() {
+  switch (m_status) {
+    case CallStatus::CREATE: {
+      m_status = CallStatus::PROCESS;
+      m_service->RequestClientQuery(
+          &m_server_ctx,
+          &m_request,
+          &m_responder,
+          m_scq,
+          m_scq,
+          (void*)&m_tag);
+      break;
+    }
+    case CallStatus::PROCESS: {
+      Logger::Debug("Processing ClientQuery reply...");
+      new ClientQueryData(m_ctx, m_service, m_scq);
+
+      auto [m_response, s] = m_ctx.ConcensusInstance()->ProcessClientQueryClientRequest(m_request);
+
+      m_status = CallStatus::FINISH;
+      m_responder.Finish(m_response, s, (void*)&m_tag);
+      break;
+    }
+    case CallStatus::FINISH: {
+      delete this;
+    }
+  }
+}
+
 
 }
 
