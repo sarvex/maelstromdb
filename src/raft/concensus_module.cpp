@@ -550,7 +550,6 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
 
 std::tuple<protocol::raft::GetConfiguration_Response, grpc::Status> ConcensusModule::ProcessGetConfigurationClientRequest() {
   protocol::raft::GetConfiguration_Response reply;
-
   if (m_state != RaftState::LEADER) {
     grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
     std::make_tuple(reply, err);

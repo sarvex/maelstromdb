@@ -40,6 +40,9 @@ add_library(maelstromdb_lib
   raft/session_cache.cpp
   core/async_executor.cpp
   core/timer.cpp
+  cli/command_parser.cpp
+  cli/create.cpp
+  cli/reconfigure.cpp
   utils/logger.cpp)
 target_link_libraries(maelstromdb_lib
   grpc_raft_proto
@@ -53,9 +56,9 @@ target_include_directories(maelstromdb_lib
   utils
   "${CMAKE_BINARY_DIR}/protogen")
 
-add_executable(maelstrom
-  maelstrom.cpp)
-target_link_libraries(maelstrom
+add_executable(maelstromcli
+  cli/maelstromcli.cpp)
+target_link_libraries(maelstromcli
   maelstromdb_lib)
 
 
