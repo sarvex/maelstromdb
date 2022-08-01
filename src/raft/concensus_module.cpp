@@ -667,19 +667,19 @@ std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ConcensusModul
   int session_id = Append(session_entry);
 
   m_session_sync.wait(lock, [this, session_id, saved_term] {
-      return m_commit_index.load() >= session_id || Term() != saved_term;
+      return m_last_applied.load() >= session_id || Term() != saved_term;
   });
 
-  if (m_commit_index.load() >= session_id) {
-    Logger::Debug("RegisterClient log entry committed successfully");
-    reply.set_clientid(session_id);
-    reply.set_status(true);
-    return std::make_tuple(reply, grpc::Status::OK);
-  } else {
+  if (Term() != saved_term) {
     grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
     reply.set_status(false);
     return std::make_tuple(reply, err);
   }
+
+  Logger::Debug("RegisterClient log entry committed successfully");
+  reply.set_clientid(session_id);
+  reply.set_status(true);
+  return std::make_tuple(reply, grpc::Status::OK);
 }
 
 std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule::ProcessClientRequestClientRequest(
@@ -702,7 +702,7 @@ std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule
   int write_id = Append(write_entry);
 
   m_write_command_sync.wait(lock, [this, write_id, saved_term] {
-      return m_commit_index.load() >= write_id || Term() != saved_term;
+      return m_last_applied.load() >= write_id || Term() != saved_term;
   });
 
   if (Term() != saved_term) {
@@ -720,6 +720,7 @@ std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule
   }
 
   // TODO: Apply write command to state machine and save the response in the session cache
+  reply.set_status(true);
   return std::make_tuple(reply, grpc::Status::OK);
 }
 
@@ -774,6 +775,7 @@ std::tuple<protocol::raft::ClientQuery_Response, grpc::Status> ConcensusModule::
   }
 
   // TODO: Process query
+  reply.set_status(true);
   return std::make_tuple(reply, grpc::Status::OK);
 }
 

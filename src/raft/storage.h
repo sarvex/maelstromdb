@@ -27,6 +27,7 @@ public:
   const std::unordered_map<protocol::log::LogOpCode, std::string> OPCODE_NAME = {
     {protocol::log::NO_OP, "NO_OP"},
     {protocol::log::CONFIGURATION, "CONFIGURATION"},
+    {protocol::log::REGISTER_CLIENT, "REGISTER_CLIENT"},
     {protocol::log::DATA, "DATA"}
   };
 

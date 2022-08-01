@@ -1,9 +1,11 @@
 #include <iostream>
 #include <string>
 
-#include "logger.h"
 #include "create.h"
+#include "logger.h"
+#include "query.h"
 #include "reconfigure.h"
+#include "write.h"
 
 namespace cli {
 
@@ -25,7 +27,11 @@ public:
       auto parser = Reconfigure();
       parser.Parse(argc, argv);
     } else if (command == "query") {
+      auto parser = Query();
+      parser.Parse(argc, argv);
     } else if (command == "write") {
+      auto parser = Write();
+      parser.Parse(argc, argv);
     } else if (command == "help") {
       CommandList();
     } else {

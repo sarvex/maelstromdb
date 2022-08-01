@@ -43,6 +43,8 @@ add_library(maelstromdb_lib
   cli/command_parser.cpp
   cli/create.cpp
   cli/reconfigure.cpp
+  cli/query.cpp
+  cli/write.cpp
   utils/logger.cpp)
 target_link_libraries(maelstromdb_lib
   grpc_raft_proto

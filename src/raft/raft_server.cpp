@@ -42,6 +42,7 @@ void RaftServerImpl::RPCEventLoop() {
   new RaftServerImpl::AppendEntriesData(m_ctx, &m_service, m_scq.get());
   new RaftServerImpl::GetConfigurationData(m_ctx, &m_service, m_scq.get());
   new RaftServerImpl::SetConfigurationData(m_ctx, &m_service, m_scq.get());
+  new RaftServerImpl::RegisterClientData(m_ctx, &m_service, m_scq.get());
   new RaftServerImpl::ClientRequestData(m_ctx, &m_service, m_scq.get());
   new RaftServerImpl::ClientQueryData(m_ctx, &m_service, m_scq.get());
 
@@ -242,6 +243,44 @@ void RaftServerImpl::GetConfigurationData::Proceed() {
   }
 }
 
+RaftServerImpl::RegisterClientData::RegisterClientData(
+    GlobalCtxManager& ctx,
+    protocol::raft::RaftService::AsyncService* service,
+    grpc::ServerCompletionQueue* scq)
+  : CallData(ctx, service, scq), m_responder(&m_server_ctx) {
+  m_tag.id = RaftClientImpl::ClientCommandID::REGISTER_CLIENT;
+  m_tag.call = this;
+  Proceed();
+}
+
+void RaftServerImpl::RegisterClientData::Proceed() {
+  switch (m_status) {
+    case CallStatus::CREATE: {
+      m_status = CallStatus::PROCESS;
+      m_service->RequestRegisterClient(
+          &m_server_ctx,
+          &m_request,
+          &m_responder,
+          m_scq,
+          m_scq,
+          (void*)&m_tag);
+      break;
+    }
+    case CallStatus::PROCESS: {
+      Logger::Debug("Processing RegisterClient reply...");
+      new RegisterClientData(m_ctx, m_service, m_scq);
+
+      auto [m_response, s] = m_ctx.ConcensusInstance()->ProcessRegisterClientClientRequest();
+
+      m_status = CallStatus::FINISH;
+      m_responder.Finish(m_response, s, (void*)&m_tag);
+      break;
+    }
+    case CallStatus::FINISH: {
+      delete this;
+    }
+  }
+}
 RaftServerImpl::ClientRequestData::ClientRequestData(
     GlobalCtxManager& ctx,
     protocol::raft::RaftService::AsyncService* service,
