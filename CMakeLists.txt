@@ -30,11 +30,6 @@ else()
   message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
 endif()
 
-find_program(CCACHE_FOUND ccache)
-if(CCACHE_FOUND)
-  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-endif(CCACHE_FOUND)
-
 include(FetchContent)
 
 option(USE_SYSTEM_GTEST "Use system installed gtest" OFF)
@@ -53,36 +48,37 @@ endif()
 
 option(USE_SYSTEM_PROTOBUF "Use system installed protobuf" OFF)
 if(USE_SYSTEM_PROTOBUF)
-    find_package(Protobuf REQUIRED)
-    message(STATUS "Using protobuf ${Protobuf_VERSION}")
+  find_package(Protobuf REQUIRED)
+  message(STATUS "Using protobuf ${Protobuf_VERSION}")
 else()
     include(FetchContent)
     FetchContent_Declare(
         protobuf
         GIT_REPOSITORY https://github.com/protocolbuffers/protobuf
-        GIT_TAG        v3.19.1
+        GIT_TAG        v3.18.0
     )
     set(FETCHCONTENT_QUIET OFF)
     FetchContent_MakeAvailable(protobuf)
 endif()
 
-option(USE_SYSTEM_GRPC "Use system installed gRPC" OFF)
+option(USE_SYSTEM_GRPC "Use system installed gRPC" ON)
 if(USE_SYSTEM_GRPC)
-    find_package(gRPC CONFIG REQUIRED)
-    message(STATUS "Using grpc ${gRPC_VERSION}")
+  find_package(Protobuf REQUIRED)
+  find_package(gRPC CONFIG REQUIRED)
+  message(STATUS "Using grpc ${gRPC_VERSION}")
 else()
     include(FetchContent)
     FetchContent_Declare(
         gRPC
         GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG        v1.41.1
+        GIT_TAG        v1.43.0
     )
     set(FETCHCONTENT_QUIET OFF)
     FetchContent_MakeAvailable(gRPC)
 endif()
 
-set(_PROTOBUF_PROTOC $<TARGET_FILE:protoc>)
-set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:grpc_cpp_plugin>)
+set(_PROTOBUF_PROTOC $<TARGET_FILE:protobuf::protoc>)
+set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:gRPC::grpc_cpp_plugin>)
 
 enable_testing()
 

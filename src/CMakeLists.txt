@@ -1,4 +1,6 @@
-foreach(target raft log)
+file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/protogen")
+
+foreach(target log raft)
   get_filename_component(proto "../src/protos/${target}.proto" ABSOLUTE)
   get_filename_component(proto_path "${proto}" PATH)
   set(proto_hdrs "${CMAKE_BINARY_DIR}/protogen/${target}.pb.h")
@@ -23,10 +25,10 @@ foreach(target raft log)
     ${proto_hdrs})
 
   target_link_libraries("grpc_${target}_proto"
-    grpc++_reflection
-    grpc++
-    libprotoc
-    libprotobuf)
+    gRPC::grpc++_reflection
+    gRPC::grpc++
+    protobuf::libprotoc
+    protobuf::libprotobuf)
 endforeach()
 
 add_library(maelstromdb_lib
