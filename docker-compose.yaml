@@ -1,0 +1,36 @@
+version: "3.7"
+services:
+  admin:
+    container_name: admin
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+  node1:
+    container_name: node1
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./maelstromcli create -l node1:3000
+    ports:
+      - 3001:3000
+    restart: unless-stopped
+  node2:
+    container_name: node2
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./maelstromcli create node2:3000
+    ports:
+      - 3002:3000
+    restart: unless-stopped
+  node3:
+    container_name: node3
+    build:
+      context: .
+      dockerfile: Dockerfile
+    command: ./maelstromcli create node3:3000
+    ports:
+      - 3003:3000
+    restart: unless-stopped
+

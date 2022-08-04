@@ -41,7 +41,6 @@ void Create::Parse(int argc, char* argv[]) {
     exit(1);
   }
   address = argv[optind];
-  std::cout << "ADDRESS: " << address << "\n";
 
   InitializeNode(address, initialize_as_leader);
 }
