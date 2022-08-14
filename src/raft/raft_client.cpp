@@ -59,6 +59,7 @@ void RaftClientImpl::RequestVote(
   auto* call = new AsyncClientCall<protocol::raft::RequestVote_Request, protocol::raft::RequestVote_Response>;
 
   call->request = request_args;
+  call->peer_address = peer_id;
   call->response_reader = m_stubs[peer_id]->PrepareAsyncRequestVote(&call->ctx, request_args, &m_cq);
   call->response_reader->StartCall();
 
@@ -95,6 +96,7 @@ void RaftClientImpl::AppendEntries(
   auto* call = new AsyncClientCall<protocol::raft::AppendEntries_Request, protocol::raft::AppendEntries_Response>;
 
   call->request = request_args;
+  call->peer_address = peer_id;
   call->response_reader = m_stubs[peer_id]->PrepareAsyncAppendEntries(&call->ctx, request_args, &m_cq);
   call->response_reader->StartCall();
 
@@ -148,8 +150,7 @@ void RaftClientImpl::HandleRequestVoteReply(AsyncClientCall<protocol::raft::Requ
     return;
   }
 
-  std::string peer_address = call->ctx.peer().substr(5);
-  m_ctx.ConcensusInstance()->ProcessRequestVoteServerResponse(call->request, call->reply, peer_address);
+  m_ctx.ConcensusInstance()->ProcessRequestVoteServerResponse(call->request, call->reply, call->peer_address);
 
   Logger::Debug("RequestVote call was received");
 }
@@ -161,8 +162,7 @@ void RaftClientImpl::HandleAppendEntriesReply(AsyncClientCall<protocol::raft::Ap
     return;
   }
 
-  std::string peer_address = call->ctx.peer().substr(5);
-  m_ctx.ConcensusInstance()->ProcessAppendEntriesServerResponse(call->request, call->reply, peer_address);
+  m_ctx.ConcensusInstance()->ProcessAppendEntriesServerResponse(call->request, call->reply, call->peer_address);
 
   Logger::Debug("AppendEntries call was received");
 }

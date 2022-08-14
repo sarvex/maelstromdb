@@ -95,6 +95,7 @@ private:
     grpc::ClientContext ctx;
     grpc::Status status;
     std::unique_ptr<grpc::ClientAsyncResponseReader<ResponseType>> response_reader;
+    std::string peer_address;
   };
 
   void HandleRequestVoteReply(AsyncClientCall<protocol::raft::RequestVote_Request,
