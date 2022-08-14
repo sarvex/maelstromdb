@@ -31,51 +31,13 @@ else()
 endif()
 
 include(FetchContent)
+find_package(GTest CONFIG REQUIRED)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(gRPC CONFIG REQUIRED)
 
-option(USE_SYSTEM_GTEST "Use system installed gtest" OFF)
-if(USE_SYSTEM_GTEST)
-  find_package(GTest CONFIG REQUIRED)
-  message(STATUS "Using googletest ${GTest_VERSION}")
-else()
-  FetchContent_Declare(
-    googletest
-    GIT_REPOSITORY https://github.com/google/googletest
-    GIT_TAG        release-1.11.0
-  )
-  set(FETCHCONTENT_QUIET OFF)
-  FetchContent_MakeAvailable(googletest)
-endif()
-
-option(USE_SYSTEM_PROTOBUF "Use system installed protobuf" OFF)
-if(USE_SYSTEM_PROTOBUF)
-  find_package(Protobuf REQUIRED)
-  message(STATUS "Using protobuf ${Protobuf_VERSION}")
-else()
-    include(FetchContent)
-    FetchContent_Declare(
-        protobuf
-        GIT_REPOSITORY https://github.com/protocolbuffers/protobuf
-        GIT_TAG        v3.18.0
-    )
-    set(FETCHCONTENT_QUIET OFF)
-    FetchContent_MakeAvailable(protobuf)
-endif()
-
-option(USE_SYSTEM_GRPC "Use system installed gRPC" ON)
-if(USE_SYSTEM_GRPC)
-  find_package(Protobuf REQUIRED)
-  find_package(gRPC CONFIG REQUIRED)
-  message(STATUS "Using grpc ${gRPC_VERSION}")
-else()
-    include(FetchContent)
-    FetchContent_Declare(
-        gRPC
-        GIT_REPOSITORY https://github.com/grpc/grpc
-        GIT_TAG        v1.43.0
-    )
-    set(FETCHCONTENT_QUIET OFF)
-    FetchContent_MakeAvailable(gRPC)
-endif()
+message(STATUS "Using googletest ${GTest_VERSION}")
+message(STATUS "Using protobuf ${Protobuf_VERSION}")
+message(STATUS "Using grpc ${gRPC_VERSION}")
 
 set(_PROTOBUF_PROTOC $<TARGET_FILE:protobuf::protoc>)
 set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:gRPC::grpc_cpp_plugin>)
