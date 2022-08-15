@@ -421,7 +421,7 @@ void ConcensusModule::ProcessRequestVoteServerResponse(
       m_votes_received++;
 
       // If CANDIDATE receives majority of votes it becomes the new leader
-      if (m_votes_received*2 > m_configuration->ServerAddresses().size() + 1) {
+      if (m_votes_received*2 > m_configuration->ServerAddresses().size()) {
         Logger::Debug("Wins election with", m_votes_received, "votes");
         PromoteToLeader();
         return;
