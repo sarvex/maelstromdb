@@ -13,49 +13,41 @@ void LeaderProxy::CreateConnections(std::vector<std::string> peer_addresses) {
   }
 }
 
-protocol::raft::GetConfiguration_Response LeaderProxy::GetClusterConfiguration() {
-  protocol::raft::GetConfiguration_Response reply;
+grpc::Status LeaderProxy::GetClusterConfiguration(protocol::raft::GetConfiguration_Response& reply) {
   auto call = std::bind(&LeaderProxy::GetConfigurationRPC, this, std::placeholders::_1, std::ref(reply));
-  RedirectToLeader(call);
-  return reply;
+  return RedirectToLeader(call);
 }
 
-protocol::raft::SetConfiguration_Response LeaderProxy::SetClusterConfiguration(
+grpc::Status LeaderProxy::SetClusterConfiguration(
     int cluster_id,
-    const std::vector<protocol::log::Server>& new_servers) {
-  protocol::raft::SetConfiguration_Response reply;
+    const std::vector<protocol::log::Server>& new_servers,
+    protocol::raft::SetConfiguration_Response& reply) {
   auto call = std::bind(&LeaderProxy::SetConfigurationRPC, this, std::placeholders::_1, cluster_id, new_servers, std::ref(reply));
-  RedirectToLeader(call);
-  return reply;
+  return RedirectToLeader(call);
 }
 
-protocol::raft::RegisterClient_Response LeaderProxy::RegisterClient() {
-  protocol::raft::RegisterClient_Response reply;
+grpc::Status LeaderProxy::RegisterClient(protocol::raft::RegisterClient_Response& reply) {
   auto call = std::bind(&LeaderProxy::RegisterClientRPC, this, std::placeholders::_1, std::ref(reply));
-  RedirectToLeader(call);
-  return reply;
+  return RedirectToLeader(call);
 }
 
-protocol::raft::ClientRequest_Response LeaderProxy::ClientRequest(
+grpc::Status LeaderProxy::ClientRequest(
     int client_id,
     int sequence_num,
-    std::string command) {
-  protocol::raft::ClientRequest_Response reply;
+    std::string command,
+    protocol::raft::ClientRequest_Response& reply) {
   auto call = std::bind(&LeaderProxy::ClientRequestRPC, this, std::placeholders::_1,
                         client_id, sequence_num, command, std::ref(reply));
-  RedirectToLeader(call);
-  return reply;
+  return RedirectToLeader(call);
 }
 
-protocol::raft::ClientQuery_Response LeaderProxy::ClientQuery(std::string query)
+grpc::Status LeaderProxy::ClientQuery(std::string query, protocol::raft::ClientQuery_Response& reply)
 {
-  protocol::raft::ClientQuery_Response reply;
   auto call = std::bind(&LeaderProxy::ClientQueryRPC, this, std::placeholders::_1, query, std::ref(reply));
-  RedirectToLeader(call);
-  return reply;
+  return RedirectToLeader(call);
 }
 
-void LeaderProxy::RedirectToLeader(
+grpc::Status LeaderProxy::RedirectToLeader(
       std::function<grpc::Status(std::string)> func) {
   std::unordered_set<std::string> visited;
   grpc::Status status;
@@ -69,7 +61,7 @@ void LeaderProxy::RedirectToLeader(
     protocol::raft::Error err;
     status = Retry(address, func);
     if (status.ok()) {
-      return;
+      return status;
     }
     err.ParseFromString(status.error_details());
 
@@ -80,6 +72,7 @@ void LeaderProxy::RedirectToLeader(
       visited.insert(err.leaderhint());
     }
   }
+  return status;
 }
 
 grpc::Status LeaderProxy::Retry(

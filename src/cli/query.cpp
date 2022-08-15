@@ -51,10 +51,15 @@ void Query::Help() {
 void Query::Execute(std::vector<std::string>& addresses, std::string command) {
   std::cout << "Attempting to create read-only query...\n";
   raft::LeaderProxy proxy(addresses);
-  auto result = proxy.ClientQuery(command);
+  protocol::raft::ClientQuery_Response reply;
+  auto status = proxy.ClientQuery(command, reply);
 
-  std::cout << "Query successful? " << (result.status() ? "Yes" : "No") << "\n";
-  std::cout << "Query response: " << result.response() << "\n";
+  std::cout << "Query successful? " << (status.ok() ? "Yes" : "No") << "\n";
+  if (status.ok()) {
+    std::cout << "Query response: " << reply.response() << "\n";
+  } else {
+    std::cout << "Query error: " << status.error_message() << "\n";
+  }
 }
 
 }

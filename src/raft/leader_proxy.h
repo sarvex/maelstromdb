@@ -22,25 +22,27 @@ public:
 
   void CreateConnections(std::vector<std::string> peer_addresses);
 
-  protocol::raft::GetConfiguration_Response GetClusterConfiguration();
-  protocol::raft::SetConfiguration_Response SetClusterConfiguration(
+  grpc::Status GetClusterConfiguration(protocol::raft::GetConfiguration_Response& reply);
+  grpc::Status SetClusterConfiguration(
       int cluster_id,
-      const std::vector<protocol::log::Server>& new_servers);
+      const std::vector<protocol::log::Server>& new_servers,
+      protocol::raft::SetConfiguration_Response& reply);
 
-  protocol::raft::RegisterClient_Response RegisterClient();
-  protocol::raft::ClientRequest_Response ClientRequest(
+  grpc::Status RegisterClient(protocol::raft::RegisterClient_Response& reply);
+  grpc::Status ClientRequest(
       int client_id,
       int sequence_num,
-      std::string command);
-  protocol::raft::ClientQuery_Response ClientQuery(std::string query);
+      std::string command,
+      protocol::raft::ClientRequest_Response& reply);
+  grpc::Status ClientQuery(std::string query, protocol::raft::ClientQuery_Response& reply);
 
 private:
-  void RedirectToLeader(
+  grpc::Status RedirectToLeader(
       std::function<grpc::Status(std::string)> func);
 
-    grpc::Status Retry(
-        std::string address,
-        std::function<grpc::Status(std::string)> func);
+  grpc::Status Retry(
+      std::string address,
+      std::function<grpc::Status(std::string)> func);
 
   grpc::Status GetConfigurationRPC(
       std::string peer_id,

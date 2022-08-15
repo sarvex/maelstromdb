@@ -53,9 +53,10 @@ void Reconfigure::SetConfiguration(
     std::vector<std::string> new_addresses) {
   std::cout << "Attempting to modify cluster configuration...\n";
   raft::LeaderProxy proxy(old_addresses);
-  auto cluster = proxy.GetClusterConfiguration();
+  protocol::raft::GetConfiguration_Response get_reply;
+  auto status = proxy.GetClusterConfiguration(get_reply);
   std::cout << "Existing configuration: ";
-  for (auto server:cluster.servers()) {
+  for (auto server:get_reply.servers()) {
     std::cout << server.address() << " ";
   }
 
@@ -69,8 +70,12 @@ void Reconfigure::SetConfiguration(
   }
   std::cout << "\n";
 
-  auto membership_change = proxy.SetClusterConfiguration(cluster.id(), servers);
-  std::cout << "Membership result OK? " << (membership_change.ok() ? "Yes" : "No") << "\n";
+  protocol::raft::SetConfiguration_Response set_reply;
+  status = proxy.SetClusterConfiguration(get_reply.id(), servers, set_reply);
+  std::cout << "Membership result OK? " << (status.ok() ? "Yes" : "No") << "\n";
+  if (!status.ok()) {
+    std::cout << "Membership change error: " << status.error_message() << "\n";
+  }
 }
 
 }

@@ -42,6 +42,7 @@ add_library(maelstromdb_lib
   raft/session_cache.cpp
   core/async_executor.cpp
   core/timer.cpp
+  core/inmemory_store.cpp
   cli/command_parser.cpp
   cli/create.cpp
   cli/reconfigure.cpp

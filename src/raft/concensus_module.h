@@ -16,6 +16,7 @@
 
 #include "async_executor.h"
 #include "cluster_configuration.h"
+#include "inmemory_store.h"
 #include "logger.h"
 #include "raft.grpc.pb.h"
 #include "session_cache.h"
@@ -332,9 +333,10 @@ private:
   std::condition_variable m_session_sync;
 
   std::condition_variable m_write_command_sync;
+
+  InmemoryStore m_store;
 };
 
 }
 
 #endif
-

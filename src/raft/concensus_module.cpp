@@ -18,7 +18,8 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_timer_executor(std::make_shared<core::Strand>())
   , m_election_timeout(std::chrono::milliseconds(500))
   , m_election_deadline(clock_type::now())
-  , m_session(std::make_unique<SessionCache>(1000)) {
+  , m_session(std::make_unique<SessionCache>(1000))
+  , m_store(InmemoryStore()) {
 }
 
 void ConcensusModule::StateMachineInit() {
@@ -719,8 +720,19 @@ std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule
     return std::make_tuple(reply, grpc::Status::OK);
   }
 
-  // TODO: Apply write command to state machine and save the response in the session cache
+  bool found = m_session->GetCachedResponse(request.clientid(), request.sequencenum(), reply);
+  if (found) {
+    return std::make_tuple(reply, grpc::Status::OK);
+  }
+
+  int split_pos = request.command().find(':');
+  std::string key = request.command().substr(0, split_pos);
+  std::string val = request.command().substr(split_pos + 1);
+  m_store.Write(key, val);
+
+  reply.set_response("success");
   reply.set_status(true);
+  m_session->CacheResponse(request.clientid(), request.sequencenum(), reply);
   return std::make_tuple(reply, grpc::Status::OK);
 }
 
@@ -774,10 +786,17 @@ std::tuple<protocol::raft::ClientQuery_Response, grpc::Status> ConcensusModule::
     return std::make_tuple(reply, err);
   }
 
-  // TODO: Process query
+  try {
+    std::string response = m_store.Read(request.query());
+    reply.set_response(response);
+  } catch (std::out_of_range) {
+    reply.set_status(false);
+    grpc::Status err = ConstructError("Key does not exist", protocol::raft::Error::Code::Error_Code_UNEXPECTED_ERROR);
+    return std::make_tuple(reply, err);
+  }
+
   reply.set_status(true);
   return std::make_tuple(reply, grpc::Status::OK);
 }
 
 }
-

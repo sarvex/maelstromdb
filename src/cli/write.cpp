@@ -51,18 +51,24 @@ void Write::Help() {
 void Write::Execute(std::vector<std::string> addresses, std::string command) {
   std::cout << "Attempting to create write query...\n";
   raft::LeaderProxy proxy(addresses);
-  auto session = proxy.RegisterClient();
+  protocol::raft::RegisterClient_Response session_reply;
+  auto status = proxy.RegisterClient(session_reply);
 
-  std::cout << "Session created successfully? " << (session.status() ? "Yes" : "No") << "\n";
-
-  if (!session.status()) {
+  std::cout << "Session created successfully? " << (status.ok() ? "Yes" : "No") << "\n";
+  if (!status.ok()) {
     return;
   }
-  int sequence_num = 1;
-  auto result = proxy.ClientRequest(session.clientid(), sequence_num, command);
 
-  std::cout << "Query successful? " << (result.status() ? "Yes" : "No") << "\n";
-  std::cout << "Query response: " << result.response() << "\n";
+  int sequence_num = 1;
+  protocol::raft::ClientRequest_Response reply;
+  status = proxy.ClientRequest(session_reply.clientid(), sequence_num, command, reply);
+
+  std::cout << "Query successful? " << (status.ok() ? "Yes" : "No") << "\n";
+  if (status.ok()) {
+    std::cout << "Query response: " << reply.response() << "\n";
+  } else {
+    std::cout << "Query error: " << status.error_message();
+  }
 }
 
 }
