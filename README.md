@@ -10,13 +10,13 @@ This should open a shell from which the cluster can be connected with,
 ```
 To write key-value pairs run,
 ```
-./maelstromcli write --cluster=node1:3000,node2:3000,node3:3000 ${key}:${value}
+./maelstromcli write --cluster=node1:3000,node2:3000,node3:3000 $key:$value
 ```
-substituting ${key} and ${value} with the key value pair.
+substituting $key and $value with the key value pair.
 To read data run,
 ```
-./maelstromcli query --cluster=node1:3000,node2:3000,node3:3000 ${key}
+./maelstromcli query --cluster=node1:3000,node2:3000,node3:3000 $key
 ```
-substituting ${key} with the known key.
+substituting $key with the known key.
 
 
