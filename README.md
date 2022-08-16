@@ -1,3 +1,21 @@
+# MaelstromDB
+MaelstromDB is a toy implementation of a distributed SQL database using the Raft protocol.
+
+## Raft Features
+- [X] Leader election
+- [X] Log replication
+- [X] Cluster membership changes, dynamically add/remove servers to cluster
+- [X] Linearizable semantics for clients
+- [X] Group commits, to improve write throughput
+- [X] Leader leases, to serve reads from Leader without consulting Followers to reduce read latency
+- [ ] Snapshots, to prevent unbounded growth of log
+
+## Prerequisites
+The database was tested with the following versions of docker and docker-compose,
+- docker >= 20.10.5
+- docker-compose >= 1.29.0
+
+## Usage
 To create a 3 node cluster run,
 ```
 docker-compose build
@@ -18,5 +36,4 @@ To read data run,
 ./maelstromcli query --cluster=node1:3000,node2:3000,node3:3000 $key
 ```
 substituting $key with the known key.
-
 
