@@ -8,6 +8,7 @@
 #include <future>
 #include <memory>
 #include <set>
+#include <type_traits>
 
 #include "async_executor.h"
 #include "logger.h"
@@ -18,7 +19,7 @@ class TimerQueue;
 
 class TimerEvent {
 public:
-  using clock_type = std::chrono::high_resolution_clock;
+  using clock_type = std::chrono::steady_clock;
   using time_point = std::chrono::time_point<clock_type>;
   using milliseconds = std::chrono::milliseconds;
 
@@ -47,10 +48,10 @@ public:
 
   bool Expired(time_point time) const;
 
+  static bool Comparator(const std::shared_ptr<TimerEvent>& lhs, const std::shared_ptr<TimerEvent>& rhs);
+
   std::shared_ptr<TimerQueue> TimerQueueInstance() const;
   std::shared_ptr<AsyncExecutor> ExecutorInstance() const;
-
-  bool operator<(const TimerEvent& rhs);
 
 protected:
   std::atomic<bool> m_cancelled;
@@ -99,7 +100,8 @@ public:
   };
 
   using event_queue = std::vector<std::pair<std::shared_ptr<TimerEvent>, TimerEventType>>;
-  using timer_set = std::multiset<std::shared_ptr<TimerEvent>>;
+  using comparator = std::integral_constant<decltype(&TimerEvent::Comparator), &TimerEvent::Comparator>;
+  using timer_set = std::multiset<std::shared_ptr<TimerEvent>, comparator>;
 
 public:
   TimerQueue();

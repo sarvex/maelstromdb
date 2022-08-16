@@ -30,11 +30,6 @@ else()
   message(FATAL_ERROR "Unknown build type: ${CMAKE_BUILD_TYPE}")
 endif()
 
-find_program(CCACHE_FOUND ccache)
-if(CCACHE_FOUND)
-  set_property(GLOBAL PROPERTY RULE_LAUNCH_COMPILE ccache)
-endif(CCACHE_FOUND)
-
 include(FetchContent)
 find_package(GTest CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)

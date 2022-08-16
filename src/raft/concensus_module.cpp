@@ -16,10 +16,12 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_leader_id("")
   , m_configuration(std::make_unique<ClusterConfiguration>())
   , m_timer_executor(std::make_shared<core::Strand>())
-  , m_election_timeout(std::chrono::milliseconds(500))
+  , m_election_timeout(std::chrono::milliseconds(ELECTION_TIMEOUT))
   , m_election_deadline(clock_type::now())
   , m_session(std::make_unique<SessionCache>(1000))
-  , m_store(InmemoryStore()) {
+  , m_store(InmemoryStore())
+  , m_renew_lease(false)
+  , m_lease_holder(false) {
 }
 
 void ConcensusModule::StateMachineInit() {
@@ -50,13 +52,17 @@ void ConcensusModule::StateMachineInit() {
   }
 
   m_election_timer = m_ctx.TimerQueueInstance()->CreateTimer(
-      450,
+      ELECTION_TIMEOUT,
       m_timer_executor,
       std::bind(&ConcensusModule::ElectionCallback, this, Term()));
   m_heartbeat_timer = m_ctx.TimerQueueInstance()->CreateTimer(
-      200,
+      HEARTBEAT_TIMEOUT,
       m_timer_executor,
       std::bind(&ConcensusModule::HeartbeatCallback, this));
+  m_lease_timer = m_ctx.TimerQueueInstance()->CreateTimer(
+      LEADER_LEASE_TIMEOUT,
+      m_timer_executor,
+      std::bind(&ConcensusModule::ResetToFollower, this, Term()));
 }
 
 void ConcensusModule::InitializeConfiguration() {
@@ -151,6 +157,10 @@ void ConcensusModule::HeartbeatCallback() {
     return;
   }
 
+  m_heartbeat_time = clock_type::now();
+  m_renew_lease.store(true);
+  m_responding_peers = {m_ctx.address};
+
   int saved_term = Term();
   for (auto peer_id:m_configuration->ServerAddresses()) {
     if (peer_id == m_ctx.address) {
@@ -186,7 +196,7 @@ void ConcensusModule::HeartbeatCallback() {
 void ConcensusModule::ScheduleElection(const int term) {
   std::random_device rd; // Obtain a random number from hardware
   std::mt19937 gen(rd()); // Seed the generator
-  std::uniform_int_distribution<> distr(450, 600);
+  std::uniform_int_distribution<> distr(ELECTION_TIMEOUT, ELECTION_TIMEOUT + 150);
   int random_timeout = distr(gen);
 
   Logger::Debug("Election timer created:", random_timeout, "ms");
@@ -210,12 +220,15 @@ void ConcensusModule::Shutdown() {
 
 void ConcensusModule::ResetToFollower(const int term) {
   m_state.store(RaftState::FOLLOWER);
+  m_renew_lease.store(false);
+  m_lease_holder.store(false);
   m_term.store(term);
   m_vote = "";
   m_votes_received = 0;
   Logger::Debug("Reset to follower, term:", Term());
 
   m_heartbeat_timer->Cancel();
+  m_lease_timer->Cancel();
 
   // Since term/vote of node is modified, changes must be persisted to disk
   StoreState();
@@ -273,7 +286,6 @@ void ConcensusModule::CommitEntries(int start_index, std::vector<protocol::log::
   for (int i = 0; i < log_entries.size(); i++) {
     switch (log_entries[i].type()) {
       case protocol::log::LogOpCode::NO_OP: {
-        m_noop_sync.notify_all();
         break;
       }
       case protocol::log::LogOpCode::DATA: {
@@ -290,7 +302,6 @@ void ConcensusModule::CommitEntries(int start_index, std::vector<protocol::log::
     }
 
     m_last_applied++;
-    m_applied_sync.notify_all();
   }
 }
 
@@ -482,7 +493,7 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
       }
 
       // Commits log entries that have been committed by the LEADER
-      if (request.leadercommit() > m_commit_index) {
+      if (request.leadercommit() > m_commit_index.load()) {
         int saved_commit_index = m_commit_index.load();
         int new_commit_index = std::min((int)request.leadercommit(), m_ctx.LogInstance()->LogSize());
         m_commit_index.store(new_commit_index);
@@ -495,9 +506,18 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
           auto uncommited_entry = m_ctx.LogInstance()->Entry(new_last_applied);
           uncommited_entries.push_back(uncommited_entry);
         }
-        m_last_applied.store(new_last_applied);
 
         CommitEntries(saved_commit_index, uncommited_entries);
+
+        for (int i = 0; i < uncommited_entries.size(); i++) {
+          if (uncommited_entries[i].type() == protocol::log::LogOpCode::DATA) {
+            std::string command = uncommited_entries[i].data();
+            int split_pos = command.find(':');
+            std::string key = command.substr(0, split_pos);
+            std::string val = command.substr(split_pos + 1);
+            m_store.Write(key, val);
+          }
+        }
       }
     }
   }
@@ -526,9 +546,13 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
     if (reply.success()) {
       // If heartbeat is successful for majority, reads can be served
       m_responding_peers.insert(address);
-      if (m_configuration->CheckQuorum(m_responding_peers)) {
-        m_heartbeat_sync.notify_all();
-        m_responding_peers.clear();
+      if (m_renew_lease.load() && m_configuration->CheckQuorum(m_responding_peers)) {
+        Logger::Debug("Leader lease acquired");
+        int commit_delay = std::chrono::duration_cast<milliseconds>(clock_type::now() - m_heartbeat_time).count();
+        int lease_expiry = LEADER_LEASE_TIMEOUT - commit_delay;
+        m_lease_timer->Reset(lease_expiry);
+        m_lease_holder.store(true);
+        m_renew_lease.store(false);
       }
       // Update next and match index since all entries in request were replicated on FOLLOWER
       m_next_index[address] = next + request.entries().size();
@@ -745,44 +769,9 @@ std::tuple<protocol::raft::ClientQuery_Response, grpc::Status> ConcensusModule::
     return std::make_tuple(reply, err);
   }
 
-  std::mutex m;
-  std::unique_lock<std::mutex> lock(m);
-  int saved_term = Term();
-
-  // Wait until the LEADER has committed an entry to avoid a stale read
-  if (m_ctx.LogInstance()->LastLogTerm() < Term()) {
-    int last_log_index = m_ctx.LogInstance()->LastLogIndex();
-    m_noop_sync.wait(lock, [this, saved_term, last_log_index] {
-        return m_commit_index.load() >= last_log_index || Term() != saved_term;
-    });
-
-    if (Term() != saved_term) {
-      reply.set_status(false);
-      grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
-      return std::make_tuple(reply, err);
-    }
-  }
-
-  int read_index = m_commit_index.load();
-  m_heartbeat_sync.wait(lock, [this, read_index, saved_term] {
-      return m_commit_index.load() >= read_index || Term() != saved_term;
-  });
-
-  if (Term() != saved_term) {
+  if (!m_lease_holder.load()) {
     reply.set_status(false);
-    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
-    return std::make_tuple(reply, err);
-  }
-
-  if (m_last_applied.load() < read_index) {
-    m_applied_sync.wait(lock, [this, read_index, saved_term] {
-        return m_last_applied.load() >= read_index || Term() != saved_term;
-    });
-  }
-
-  if (Term() != saved_term) {
-    reply.set_status(false);
-    grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    grpc::Status err = ConstructError("Leader does not own lease to serve reads", protocol::raft::Error::Code::Error_Code_RETRY);
     return std::make_tuple(reply, err);
   }
 

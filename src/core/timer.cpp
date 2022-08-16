@@ -48,16 +48,16 @@ bool TimerEvent::Expired(time_point time) const {
   return m_deadline <= time; 
 }
 
+bool TimerEvent::Comparator(const std::shared_ptr<TimerEvent>& lhs, const std::shared_ptr<TimerEvent>& rhs) {
+  return lhs->Deadline() < rhs->Deadline();
+}
+
 std::shared_ptr<TimerQueue> TimerEvent::TimerQueueInstance() const {
   return m_request_queue;
 }
 
 std::shared_ptr<AsyncExecutor> TimerEvent::ExecutorInstance() const {
   return m_executor;
-}
-
-bool TimerEvent::operator<(const TimerEvent& rhs) {
-  return Deadline() < rhs.Deadline();
 }
 
 TimerCallbackEvent::TimerCallbackEvent(

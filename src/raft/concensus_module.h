@@ -26,9 +26,13 @@ namespace raft {
 
 class GlobalCtxManager;
 
+const int ELECTION_TIMEOUT = 1000;
+const int HEARTBEAT_TIMEOUT = 500;
+const int LEADER_LEASE_TIMEOUT = 900;
+
 class ConcensusModule {
 public:
-  using clock_type = std::chrono::high_resolution_clock;
+  using clock_type = std::chrono::steady_clock;
   using time_point = std::chrono::time_point<clock_type>;
   using milliseconds = std::chrono::milliseconds;
 
@@ -192,6 +196,8 @@ private:
    */
   void HeartbeatCallback();
 
+  void LeaseExpiryCallback();
+
   /**
    * Creates an election timer with a random timeout to trigger an election on expiry.
    * Random timeout reduces chances of multiple nodes requesting votes at the same time
@@ -243,15 +249,21 @@ private:
 
   /**
    * Asynchronous timer used by CANDIDATE and FOLLOWER nodes to trigger
-   * leader election. Expires with a random timeout between 150 and 300ms.
+   * leader election. Expires with a random timeout between 1000 and 1150ms.
    */
   std::shared_ptr<core::DeadlineTimer> m_election_timer;
 
   /**
    * Asynchronous timer used by LEADER to send heartbeat messages
-   * to other nodes. Expires every 50ms.
+   * to other nodes. Expires every 500ms.
    */
   std::shared_ptr<core::DeadlineTimer> m_heartbeat_timer;
+
+  /**
+   * Asynchronous timer used by LEADER to renew leader leases. Expires
+   * after 900ms causing the LEADER to step down and become a FOLLOWER.
+   */
+  std::shared_ptr<core::DeadlineTimer> m_lease_timer;
 
   /**
    * The address of the CANDIDATE node that this node voted for. 
@@ -318,15 +330,19 @@ private:
    */
   time_point m_election_deadline;
 
+  /**
+   * The time at which the node sent heartbeats messages. Useful for determining the offset
+   * at which the leader lease can start.
+   */
+  time_point m_heartbeat_time;
+
+  std::atomic<bool> m_lease_holder;
+
+  std::atomic<bool> m_renew_lease;
+
   std::unordered_set<std::string> m_responding_peers;
 
   std::unique_ptr<SessionCache> m_session;
-
-  std::condition_variable m_noop_sync;
-
-  std::condition_variable m_applied_sync;
-
-  std::condition_variable m_heartbeat_sync;
 
   std::condition_variable m_membership_sync;
 

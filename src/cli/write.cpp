@@ -67,7 +67,7 @@ void Write::Execute(std::vector<std::string> addresses, std::string command) {
   if (status.ok()) {
     std::cout << "Query response: " << reply.response() << "\n";
   } else {
-    std::cout << "Query error: " << status.error_message();
+    std::cout << "Query error: " << status.error_message() << "\n";
   }
 }
 
