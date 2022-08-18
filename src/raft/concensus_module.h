@@ -20,6 +20,7 @@
 #include "logger.h"
 #include "raft.grpc.pb.h"
 #include "session_cache.h"
+#include "state_machine.h"
 #include "timer.h"
 
 namespace raft {
@@ -342,7 +343,7 @@ private:
 
   std::unordered_set<std::string> m_responding_peers;
 
-  std::unique_ptr<SessionCache> m_session;
+  std::shared_ptr<SessionCache> m_session;
 
   std::condition_variable m_membership_sync;
 
@@ -350,7 +351,9 @@ private:
 
   std::condition_variable m_write_command_sync;
 
-  InmemoryStore m_store;
+  std::shared_ptr<InmemoryStore> m_store;
+
+  std::unique_ptr<StateMachine> m_state_machine;
 };
 
 }

@@ -40,6 +40,7 @@ add_library(maelstromdb_lib
   raft/cluster_configuration.cpp
   raft/leader_proxy.cpp
   raft/session_cache.cpp
+  raft/state_machine.cpp
   core/async_executor.cpp
   core/timer.cpp
   core/inmemory_store.cpp

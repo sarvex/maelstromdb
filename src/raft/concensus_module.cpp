@@ -18,8 +18,8 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_timer_executor(std::make_shared<core::Strand>())
   , m_election_timeout(std::chrono::milliseconds(ELECTION_TIMEOUT))
   , m_election_deadline(clock_type::now())
-  , m_session(std::make_unique<SessionCache>(1000))
-  , m_store(InmemoryStore())
+  , m_session(std::make_shared<SessionCache>(1000))
+  , m_store(std::make_shared<InmemoryStore>())
   , m_renew_lease(false)
   , m_lease_holder(false) {
 }
@@ -32,6 +32,8 @@ void ConcensusModule::StateMachineInit() {
     m_term.store(metadata.term());
     m_vote = metadata.vote();
   }
+
+  m_state_machine = std::make_unique<StateMachine>(m_session, m_store);
 
   protocol::log::Configuration configuration;
   int log_index;
@@ -293,15 +295,12 @@ void ConcensusModule::CommitEntries(int start_index, std::vector<protocol::log::
         break;
       }
       case protocol::log::LogOpCode::REGISTER_CLIENT: {
-        m_session->AddSession(start_index + i + 1);
         m_session_sync.notify_one();
         break;
       }
       default: {
       }
     }
-
-    m_last_applied++;
   }
 }
 
@@ -330,12 +329,12 @@ void ConcensusModule::UpdateCommitIndex() {
     m_commit_index.store(new_commit_index);
     Logger::Debug("Leader set commit_index =", new_commit_index);
 
-    int new_last_applied = m_last_applied;
+    int next_log_index = m_state_machine->LastApplied();
     std::vector<protocol::log::LogEntry> uncommited_entries;
-    while (new_last_applied < new_commit_index) {
-      new_last_applied++;
+    while (next_log_index < new_commit_index) {
+      next_log_index++;
 
-      auto uncommited_entry = m_ctx.LogInstance()->Entry(new_last_applied);
+      auto uncommited_entry = m_ctx.LogInstance()->Entry(next_log_index);
       uncommited_entries.push_back(uncommited_entry);
     }
 
@@ -499,24 +498,18 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
         m_commit_index.store(new_commit_index);
         Logger::Debug("Setting commit index =", new_commit_index);
 
-        int new_last_applied = m_last_applied;
+        int next_log_index = m_state_machine->LastApplied();
         std::vector<protocol::log::LogEntry> uncommited_entries;
-        while (new_last_applied < new_commit_index) {
-          new_last_applied++;
-          auto uncommited_entry = m_ctx.LogInstance()->Entry(new_last_applied);
+        while (next_log_index < new_commit_index) {
+          next_log_index++;
+          auto uncommited_entry = m_ctx.LogInstance()->Entry(next_log_index);
           uncommited_entries.push_back(uncommited_entry);
         }
 
         CommitEntries(saved_commit_index, uncommited_entries);
 
         for (int i = 0; i < uncommited_entries.size(); i++) {
-          if (uncommited_entries[i].type() == protocol::log::LogOpCode::DATA) {
-            std::string command = uncommited_entries[i].data();
-            int split_pos = command.find(':');
-            std::string key = command.substr(0, split_pos);
-            std::string val = command.substr(split_pos + 1);
-            m_store.Write(key, val);
-          }
+          m_state_machine->ApplyCommand(saved_commit_index + i, uncommited_entries[i]);
         }
       }
     }
@@ -692,16 +685,18 @@ std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ConcensusModul
   int session_id = Append(session_entry);
 
   m_session_sync.wait(lock, [this, session_id, saved_term] {
-      return m_last_applied.load() >= session_id || Term() != saved_term;
+      return m_commit_index.load() >= session_id || Term() != saved_term;
   });
 
   if (Term() != saved_term) {
     grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
     reply.set_status(false);
+    m_state_machine->IncrementLastApplied();
     return std::make_tuple(reply, err);
   }
 
-  Logger::Debug("RegisterClient log entry committed successfully");
+  m_state_machine->ApplyCommand(session_id, session_entry);
+
   reply.set_clientid(session_id);
   reply.set_status(true);
   return std::make_tuple(reply, grpc::Status::OK);
@@ -727,34 +722,28 @@ std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule
   int write_id = Append(write_entry);
 
   m_write_command_sync.wait(lock, [this, write_id, saved_term] {
-      return m_last_applied.load() >= write_id || Term() != saved_term;
+      return m_commit_index.load() >= write_id || Term() != saved_term;
   });
 
   if (Term() != saved_term) {
     reply.set_status(false);
     grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
+    m_state_machine->IncrementLastApplied();
     return std::make_tuple(reply, err);
   }
 
   if (!m_session->SessionExists(request.clientid())) {
     reply.set_status(false);
     grpc::Status err = ConstructError("Client session has expired", protocol::raft::Error::Code::Error_Code_SESSION_EXPIRED);
+    m_state_machine->IncrementLastApplied();
     return std::make_tuple(reply, err);
   } else if (m_session->GetCachedResponse(request.clientid(), request.sequencenum(), reply)) {
+    m_state_machine->IncrementLastApplied();
     return std::make_tuple(reply, grpc::Status::OK);
   }
 
-  bool found = m_session->GetCachedResponse(request.clientid(), request.sequencenum(), reply);
-  if (found) {
-    return std::make_tuple(reply, grpc::Status::OK);
-  }
-
-  int split_pos = request.command().find(':');
-  std::string key = request.command().substr(0, split_pos);
-  std::string val = request.command().substr(split_pos + 1);
-  m_store.Write(key, val);
-
-  reply.set_response("success");
+  std::string response = m_state_machine->ApplyCommand(write_id, write_entry);
+  reply.set_response(response);
   reply.set_status(true);
   m_session->CacheResponse(request.clientid(), request.sequencenum(), reply);
   return std::make_tuple(reply, grpc::Status::OK);
@@ -771,12 +760,12 @@ std::tuple<protocol::raft::ClientQuery_Response, grpc::Status> ConcensusModule::
 
   if (!m_lease_holder.load()) {
     reply.set_status(false);
-    grpc::Status err = ConstructError("Leader does not own lease to serve reads", protocol::raft::Error::Code::Error_Code_RETRY);
+    grpc::Status err = ConstructError("Leader does not own lease to serve reads", protocol::raft::Error::Code::Error_Code_LEASE_EXPIRED);
     return std::make_tuple(reply, err);
   }
 
   try {
-    std::string response = m_store.Read(request.query());
+    std::string response = m_store->Read(request.query());
     reply.set_response(response);
   } catch (std::out_of_range) {
     reply.set_status(false);

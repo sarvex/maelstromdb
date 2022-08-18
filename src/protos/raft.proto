@@ -22,7 +22,8 @@ message Error {
     CANCELLED = 3;
     OUT_OF_DATE = 4;
     SESSION_EXPIRED = 5;
-    UNEXPECTED_ERROR = 6;
+    LEASE_EXPIRED = 6;
+    UNEXPECTED_ERROR = 7;
   }
 
   Code statusCode = 1;
