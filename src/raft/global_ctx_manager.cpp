@@ -12,7 +12,7 @@ GlobalCtxManager::GlobalCtxManager(const std::string& address)
   , m_concensus(std::make_shared<ConcensusModule>(*this))
   , m_client(std::make_shared<RaftClientImpl>(*this))
   , m_server(std::make_shared<RaftServerImpl>(*this))
-  , m_log(std::make_shared<PersistedLog>(std::filesystem::current_path().string() + "/raft/" + address + "/"))
+  , m_log(std::make_shared<PersistedLog>("/data/raft/", true))
   , m_timer_queue(std::make_shared<core::TimerQueue>()) {
 }
 

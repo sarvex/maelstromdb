@@ -24,7 +24,7 @@ PersistedLog::Page::Page(
   , log_entries({})
   , max_file_size(max_file_size) {
   std::string file_path = dir + filename;
-  std::fstream out(file_path, std::ios::out | std::ios::binary);
+  std::fstream out(file_path, std::ios::out | std::ios::app | std::ios::binary);
 }
 
 PersistedLog::Page::Page(const Page&& page)
@@ -328,7 +328,6 @@ void PersistedLog::RestoreState() {
     if (IsFileOpen(filename)) {
       m_open_page = std::make_shared<Page>(LogSize(), m_dir, true, m_max_file_size);
       m_log_indices.insert({m_open_page->start_index, m_open_page});
-
       m_log_size += restored_entries.size();
 
       m_open_page->end_index = m_open_page->start_index + restored_entries.size();
@@ -340,9 +339,8 @@ void PersistedLog::RestoreState() {
       int start = std::stoi(filename.substr(0, dash_index));
       auto closed_page = std::make_shared<Page>(start, m_dir, false, m_max_file_size);
 
-      // Restore log data in memory
-      m_log_size += restored_entries.size();
       m_log_indices.insert({start, closed_page});
+      m_log_size += restored_entries.size();
 
       closed_page->end_index = closed_page->start_index + restored_entries.size();
       closed_page->log_entries = std::move(restored_entries);

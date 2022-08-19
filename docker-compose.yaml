@@ -15,6 +15,8 @@ services:
     ports:
       - 3001:3000
     restart: unless-stopped
+    volumes:
+      - log1:/data/raft
   node2:
     container_name: node2
     build:
@@ -24,6 +26,8 @@ services:
     ports:
       - 3002:3000
     restart: unless-stopped
+    volumes:
+      - log2:/data/raft
   node3:
     container_name: node3
     build:
@@ -33,4 +37,10 @@ services:
     ports:
       - 3003:3000
     restart: unless-stopped
+    volumes:
+      - log3:/data/raft
+volumes:
+  log1:
+  log2:
+  log3:
 

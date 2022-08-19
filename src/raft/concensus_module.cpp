@@ -71,7 +71,7 @@ void ConcensusModule::InitializeConfiguration() {
   if (Term() != 0 ||
       m_ctx.LogInstance()->LastLogIndex() != -1 ||
       m_configuration->ServerAddresses().size() > 0) {
-    Logger::Error("Raft log already exists on disk, cannot override existing cluster configuration");
+    PromoteToLeader();
     return;
   }
 
@@ -188,7 +188,7 @@ void ConcensusModule::HeartbeatCallback() {
         m_commit_index.load());
   }
 
-  if (m_configuration->ServerAddresses().size() == 1) {
+  if (m_configuration->ServerAddresses().size() == 1 && m_configuration->KnownServer(m_ctx.address)) {
     UpdateCommitIndex();
   }
 
