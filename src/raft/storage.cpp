@@ -123,7 +123,7 @@ PersistedLog::PersistedLog(
   , m_dir(parent_dir)
   , m_max_file_size(max_file_size)
   , m_log_indices()
-  , m_file_executor(std::make_shared<core::Strand>()) {
+  , m_io_executor(std::make_shared<core::Strand>()) {
   std::filesystem::create_directories(parent_dir);
 
   // Restores raft metadata and log entries from disk after recovering from server failure

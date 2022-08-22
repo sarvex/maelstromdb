@@ -1,5 +1,5 @@
-#ifndef CONCENSUS_MODULE_H
-#define CONCENSUS_MODULE_H
+#ifndef CONSENSUS_MODULE_H
+#define CONSENSUS_MODULE_H
 
 #include <grpcpp/grpcpp.h>
 #include <algorithm>
@@ -26,12 +26,13 @@
 namespace raft {
 
 class GlobalCtxManager;
+class ConsensusModuleTest;
 
 const int ELECTION_TIMEOUT = 1000;
 const int HEARTBEAT_TIMEOUT = 500;
 const int LEADER_LEASE_TIMEOUT = 900;
 
-class ConcensusModule {
+class ConsensusModule {
 public:
   using clock_type = std::chrono::steady_clock;
   using time_point = std::chrono::time_point<clock_type>;
@@ -68,15 +69,14 @@ public:
   };
 
 public:
-  ConcensusModule(GlobalCtxManager& ctx);
+  ConsensusModule(GlobalCtxManager& ctx);
 
-  ConcensusModule(const ConcensusModule&) = delete;
-  ConcensusModule& operator=(const ConcensusModule&) = delete;
+  ConsensusModule(const ConsensusModule&) = delete;
+  ConsensusModule& operator=(const ConsensusModule&) = delete;
 
   /**
-   * Initializes concensus module by restoring metadata from disk and starting
+   * Initializes consensus module by restoring metadata from disk and starting
    * an election timer.
-   *
    */
   void StateMachineInit();
 
@@ -96,6 +96,33 @@ public:
    */
   RaftState State() const;
 
+  /**
+   * Retrieve the largest index of the log which has been committed.
+   *
+   * @return m_commit_index
+   */
+  int CommitIndex() const;
+
+  /**
+   * Retrieve the address this node voted for during the previous election.
+   *
+   * @return m_vote
+   */
+  std::string Vote() const;
+
+  /**
+   * Retrieve the number of votes this node received during the previous election.
+   *
+   * @return m_votes_received
+   */
+  int VotesReceived() const;
+
+  /**
+   * Retrieve the address of the last known LEADER node. If the node
+   * was never contacted returns an empty string.
+   *
+   * @return m_leader_id
+   */
   std::string LeaderHint() const;
 
   /**
@@ -109,6 +136,11 @@ public:
    * Set the node's state to LEADER and start the heartbeat timer.
    */
   void PromoteToLeader();
+
+  void InjectTimers(
+      std::shared_ptr<core::DeadlineTimer> election_timer,
+      std::shared_ptr<core::DeadlineTimer> heartbeat_timer,
+      std::shared_ptr<core::DeadlineTimer> lease_timer);
 
   /**
    * Handles RequestVote RPC request. If the node has yet to vote and the
@@ -354,6 +386,8 @@ private:
   std::shared_ptr<InmemoryStore> m_store;
 
   std::unique_ptr<StateMachine> m_state_machine;
+
+  friend class ConsensusModuleTest;
 };
 
 }

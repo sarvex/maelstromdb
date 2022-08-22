@@ -32,7 +32,7 @@ foreach(target log raft)
 endforeach()
 
 add_library(maelstromdb_lib
-  raft/concensus_module.cpp
+  raft/consensus_module.cpp
   raft/global_ctx_manager.cpp
   raft/raft_client.cpp
   raft/raft_server.cpp
@@ -51,6 +51,7 @@ add_library(maelstromdb_lib
   cli/write.cpp
   utils/logger.cpp)
 target_link_libraries(maelstromdb_lib
+  PRIVATE
   grpc_raft_proto
   grpc_log_proto)
 target_include_directories(maelstromdb_lib

@@ -34,10 +34,12 @@ include(FetchContent)
 find_package(GTest CONFIG REQUIRED)
 find_package(Protobuf CONFIG REQUIRED)
 find_package(gRPC CONFIG REQUIRED)
+find_package(benchmark CONFIG REQUIRED)
 
 message(STATUS "Using googletest ${GTest_VERSION}")
 message(STATUS "Using protobuf ${Protobuf_VERSION}")
 message(STATUS "Using grpc ${gRPC_VERSION}")
+message(STATUS "Using googlebenchmark ${benchmark_VERSION}")
 
 set(_PROTOBUF_PROTOC $<TARGET_FILE:protobuf::protoc>)
 set(_GRPC_CPP_PLUGIN_EXECUTABLE $<TARGET_FILE:gRPC::grpc_cpp_plugin>)

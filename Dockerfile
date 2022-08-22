@@ -4,7 +4,7 @@ FROM ubuntu:20.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && \
-    apt-get install -y build-essential cmake git pkg-config protobuf-compiler
+    apt-get install -y build-essential cmake git pkg-config protobuf-compiler ninja-build
 
 WORKDIR /git
 RUN git clone --recurse-submodules -b 3.19.x https://github.com/protocolbuffers/protobuf /git/protobuf
@@ -29,10 +29,17 @@ RUN cd /git/googletest && \
     cmake ../.. && \
     make install
 
+RUN git clone https://github.com/google/benchmark.git /git/benchmark
+RUN cd /git/benchmark && \
+    mkdir -p cmake/build && \
+    cd cmake/build && \
+    cmake -DBENCHMARK_DOWNLOAD_DEPENDENCIES=on -DCMAKE_BUILD_TYPE=Release ../.. && \
+    make install
+
 COPY . /usr/src
 WORKDIR /usr/src
 
-RUN cmake -S . -B build
+RUN cmake -GNinja -S . -B build
 RUN cmake --build build
 
 FROM ubuntu:20.04 AS runtime

@@ -339,7 +339,7 @@ private:
   /**
    * An execution manager used to execute methods using a pool of workers.
    */
-  std::shared_ptr<core::AsyncExecutor> m_file_executor;
+  std::shared_ptr<core::AsyncExecutor> m_io_executor;
 
   /**
    * Absolute path to directory where raft log files are stored.

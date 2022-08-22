@@ -80,16 +80,28 @@ private:
 class DeadlineTimer {
 public:
   DeadlineTimer(std::shared_ptr<TimerEvent> ctx);
-  ~DeadlineTimer();
+  virtual ~DeadlineTimer();
 
-  void Cancel();
+  virtual void Cancel() = 0;
 
-  void Reset();
-  void Reset(int delay);
-  void Reset(std::function<void()>&& callback, int delay);
+  virtual void Reset() = 0;
+  virtual void Reset(int delay) = 0;
+  virtual void Reset(std::function<void()>&& callback, int delay) = 0;
 
-private:
+protected:
   std::shared_ptr<TimerEvent> m_timer_ctx;
+};
+
+class DeadlineTimerImpl : public DeadlineTimer {
+public:
+  DeadlineTimerImpl(std::shared_ptr<TimerEvent> ctx);
+  ~DeadlineTimerImpl();
+
+  void Cancel() override;
+
+  void Reset() override;
+  void Reset(int delay) override;
+  void Reset(std::function<void()>&& callback, int delay) override;
 };
 
 class TimerQueue : public std::enable_shared_from_this<TimerQueue> {

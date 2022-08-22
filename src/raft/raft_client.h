@@ -8,7 +8,7 @@
 #include <mutex>
 #include <unordered_map>
 
-#include "concensus_module.h"
+#include "consensus_module.h"
 #include "logger.h"
 #include "raft.grpc.pb.h"
 

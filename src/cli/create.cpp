@@ -51,9 +51,9 @@ void Create::Help() {
 void Create::InitializeNode(std::string address, bool leader) {
   std::cout << "Initializing...\n";
   raft::GlobalCtxManager ctx(address);
-  ctx.ConcensusInstance()->StateMachineInit();
+  ctx.ConsensusInstance()->StateMachineInit();
   if (leader) {
-    ctx.ConcensusInstance()->InitializeConfiguration();
+    ctx.ConsensusInstance()->InitializeConfiguration();
   }
 
   std::thread client_worker = std::thread(&raft::RaftClientImpl::AsyncCompleteRPC, ctx.ClientInstance());

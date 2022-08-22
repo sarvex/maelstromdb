@@ -6,7 +6,7 @@
 #include <grpcpp/health_check_service_interface.h>
 #include <memory>
 
-#include "concensus_module.h"
+#include "consensus_module.h"
 #include "logger.h"
 #include "raft_client.h"
 #include "raft.grpc.pb.h"

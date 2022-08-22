@@ -1,11 +1,11 @@
-#include "concensus_module.h"
+#include "consensus_module.h"
 #include "global_ctx_manager.h"
 #include "raft_client.h"
 #include "storage.h"
 
 namespace raft {
 
-ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
+ConsensusModule::ConsensusModule(GlobalCtxManager& ctx)
   : m_ctx(ctx)
   , m_vote("")
   , m_votes_received(0)
@@ -24,7 +24,7 @@ ConcensusModule::ConcensusModule(GlobalCtxManager& ctx)
   , m_lease_holder(false) {
 }
 
-void ConcensusModule::StateMachineInit() {
+void ConsensusModule::StateMachineInit() {
   // Restore raft metadata from disk if restarting node after server failure
   protocol::log::LogMetadata metadata;
   bool ok = m_ctx.LogInstance()->Metadata(metadata);
@@ -56,18 +56,18 @@ void ConcensusModule::StateMachineInit() {
   m_election_timer = m_ctx.TimerQueueInstance()->CreateTimer(
       ELECTION_TIMEOUT,
       m_timer_executor,
-      std::bind(&ConcensusModule::ElectionCallback, this, Term()));
+      std::bind(&ConsensusModule::ElectionCallback, this, Term()));
   m_heartbeat_timer = m_ctx.TimerQueueInstance()->CreateTimer(
       HEARTBEAT_TIMEOUT,
       m_timer_executor,
-      std::bind(&ConcensusModule::HeartbeatCallback, this));
+      std::bind(&ConsensusModule::HeartbeatCallback, this));
   m_lease_timer = m_ctx.TimerQueueInstance()->CreateTimer(
       LEADER_LEASE_TIMEOUT,
       m_timer_executor,
-      std::bind(&ConcensusModule::ResetToFollower, this, Term()));
+      std::bind(&ConsensusModule::ResetToFollower, this, Term()));
 }
 
-void ConcensusModule::InitializeConfiguration() {
+void ConsensusModule::InitializeConfiguration() {
   if (Term() != 0 ||
       m_ctx.LogInstance()->LastLogIndex() != -1 ||
       m_configuration->ServerAddresses().size() > 0) {
@@ -88,23 +88,35 @@ void ConcensusModule::InitializeConfiguration() {
   Append(log_entry);
 }
 
-int ConcensusModule::Term() const {
+int ConsensusModule::Term() const {
   return m_term.load();
 }
 
-ConcensusModule::RaftState ConcensusModule::State() const {
+ConsensusModule::RaftState ConsensusModule::State() const {
   return m_state.load();
 }
 
-std::string ConcensusModule::LeaderHint() const {
+int ConsensusModule::CommitIndex() const {
+  return m_commit_index.load();
+}
+
+std::string ConsensusModule::Vote() const {
+  return m_vote;
+}
+
+int ConsensusModule::VotesReceived() const {
+  return m_votes_received;
+}
+
+std::string ConsensusModule::LeaderHint() const {
   return m_leader_id;
 }
 
-void ConcensusModule::ElectionCallback(const int term) {
+void ConsensusModule::ElectionCallback(const int term) {
   Logger::Debug("Starting election");
 
   if (State() != RaftState::CANDIDATE && State() != RaftState::FOLLOWER) {
-    Logger::Debug("Concensus module state invalid for election");
+    Logger::Debug("Consensus module state invalid for election");
     return;
   }
 
@@ -113,7 +125,7 @@ void ConcensusModule::ElectionCallback(const int term) {
     return;
   }
 
-  if (m_commit_index.load() >= m_configuration->Id() &&
+  if (CommitIndex() >= m_configuration->Id() &&
       !m_configuration->KnownServer(m_ctx.address)) {
     ScheduleElection(term);
     return;
@@ -153,7 +165,7 @@ void ConcensusModule::ElectionCallback(const int term) {
   ScheduleElection(saved_term);
 }
 
-void ConcensusModule::HeartbeatCallback() {
+void ConsensusModule::HeartbeatCallback() {
   if (State() != RaftState::LEADER) {
     Logger::Debug("Invalid state for sending heartbeat");
     return;
@@ -185,7 +197,7 @@ void ConcensusModule::HeartbeatCallback() {
         prev_log_index,
         prev_log_term,
         entries,
-        m_commit_index.load());
+        CommitIndex());
   }
 
   if (m_configuration->ServerAddresses().size() == 1 && m_configuration->KnownServer(m_ctx.address)) {
@@ -195,7 +207,7 @@ void ConcensusModule::HeartbeatCallback() {
   ScheduleHeartbeat();
 }
 
-void ConcensusModule::ScheduleElection(const int term) {
+void ConsensusModule::ScheduleElection(const int term) {
   std::random_device rd; // Obtain a random number from hardware
   std::mt19937 gen(rd()); // Seed the generator
   std::uniform_int_distribution<> distr(ELECTION_TIMEOUT, ELECTION_TIMEOUT + 150);
@@ -203,16 +215,16 @@ void ConcensusModule::ScheduleElection(const int term) {
 
   Logger::Debug("Election timer created:", random_timeout, "ms");
   m_election_timer->Reset(
-      std::bind(&ConcensusModule::ElectionCallback, this, term),
+      std::bind(&ConsensusModule::ElectionCallback, this, term),
       random_timeout);
   m_election_timeout = milliseconds(random_timeout);
 }
 
-void ConcensusModule::ScheduleHeartbeat() {
+void ConsensusModule::ScheduleHeartbeat() {
   m_heartbeat_timer->Reset();
 }
 
-void ConcensusModule::Shutdown() {
+void ConsensusModule::Shutdown() {
   m_election_timer->Cancel();
   m_heartbeat_timer->Cancel();
 
@@ -220,7 +232,7 @@ void ConcensusModule::Shutdown() {
   Logger::Info("Node shutdown");
 }
 
-void ConcensusModule::ResetToFollower(const int term) {
+void ConsensusModule::ResetToFollower(const int term) {
   m_state.store(RaftState::FOLLOWER);
   m_renew_lease.store(false);
   m_lease_holder.store(false);
@@ -239,7 +251,7 @@ void ConcensusModule::ResetToFollower(const int term) {
   ScheduleElection(term);
 }
 
-void ConcensusModule::PromoteToLeader() {
+void ConsensusModule::PromoteToLeader() {
   m_state.store(RaftState::LEADER);
   m_votes_received = 0;
   m_leader_id = m_ctx.address;
@@ -255,7 +267,16 @@ void ConcensusModule::PromoteToLeader() {
   ScheduleHeartbeat();
 }
 
-void ConcensusModule::StoreState() const {
+void ConsensusModule::InjectTimers(
+    std::shared_ptr<core::DeadlineTimer> election_timer,
+    std::shared_ptr<core::DeadlineTimer> heartbeat_timer,
+    std::shared_ptr<core::DeadlineTimer> lease_timer) {
+  m_election_timer = election_timer;
+  m_heartbeat_timer = heartbeat_timer;
+  m_lease_timer = lease_timer;
+}
+
+void ConsensusModule::StoreState() const {
   protocol::log::LogMetadata metadata;
   metadata.set_term(Term());
   metadata.set_vote(m_vote);
@@ -263,7 +284,7 @@ void ConcensusModule::StoreState() const {
   Logger::Debug("Persisted metadata to disk, term =", Term(), "vote =", m_vote);
 }
 
-int ConcensusModule::Append(protocol::log::LogEntry& log_entry) {
+int ConsensusModule::Append(protocol::log::LogEntry& log_entry) {
   int log_index = m_ctx.LogInstance()->Append(log_entry);
   if (log_entry.has_configuration()) {
     m_configuration->InsertNewConfiguration(log_index, log_entry.configuration());
@@ -272,7 +293,7 @@ int ConcensusModule::Append(protocol::log::LogEntry& log_entry) {
   return log_index;
 }
 
-std::pair<int, int> ConcensusModule::Append(std::vector<protocol::log::LogEntry>& log_entries) {
+std::pair<int, int> ConsensusModule::Append(std::vector<protocol::log::LogEntry>& log_entries) {
   auto [log_start, log_end] = m_ctx.LogInstance()->Append(log_entries);
   for (int i = 0; i < log_entries.size(); i++) {
     if (log_entries[i].has_configuration()) {
@@ -284,7 +305,7 @@ std::pair<int, int> ConcensusModule::Append(std::vector<protocol::log::LogEntry>
   return {log_start, log_end};
 }
 
-void ConcensusModule::CommitEntries(int start_index, std::vector<protocol::log::LogEntry>& log_entries) {
+void ConsensusModule::CommitEntries(int start_index, std::vector<protocol::log::LogEntry>& log_entries) {
   for (int i = 0; i < log_entries.size(); i++) {
     switch (log_entries[i].type()) {
       case protocol::log::LogOpCode::NO_OP: {
@@ -304,8 +325,8 @@ void ConcensusModule::CommitEntries(int start_index, std::vector<protocol::log::
   }
 }
 
-void ConcensusModule::UpdateCommitIndex() {
-  int saved_commit_index = m_commit_index;
+void ConsensusModule::UpdateCommitIndex() {
+  int saved_commit_index = CommitIndex();
   int log_size = m_ctx.LogInstance()->LogSize();
   auto log_entries = m_ctx.LogInstance()->Entries(saved_commit_index + 1, log_size);
   int new_commit_index = saved_commit_index;
@@ -341,7 +362,7 @@ void ConcensusModule::UpdateCommitIndex() {
     CommitEntries(saved_commit_index, uncommited_entries);
   }
 
-  if (m_commit_index.load() >= m_configuration->Id()) {
+  if (CommitIndex() >= m_configuration->Id()) {
     m_membership_sync.notify_one();
 
     if (!m_configuration->KnownServer(m_ctx.address)) {
@@ -362,7 +383,7 @@ void ConcensusModule::UpdateCommitIndex() {
   }
 }
 
-grpc::Status ConcensusModule::ConstructError(std::string err_msg, protocol::raft::Error::Code code) const {
+grpc::Status ConsensusModule::ConstructError(std::string err_msg, protocol::raft::Error::Code code) const {
   protocol::raft::Error err_details;
   err_details.set_statuscode(code);
   if (code == protocol::raft::Error::Code::Error_Code_NOT_LEADER) {
@@ -371,7 +392,7 @@ grpc::Status ConcensusModule::ConstructError(std::string err_msg, protocol::raft
   return grpc::Status(grpc::StatusCode::UNKNOWN, err_msg, err_details.SerializeAsString());
 }
 
-std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::ProcessRequestVoteClientRequest(
+std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConsensusModule::ProcessRequestVoteClientRequest(
     protocol::raft::RequestVote_Request& request) {
   protocol::raft::RequestVote_Response reply;
 
@@ -413,7 +434,7 @@ std::tuple<protocol::raft::RequestVote_Response, grpc::Status> ConcensusModule::
   return std::make_tuple(reply, grpc::Status::OK);
 }
 
-void ConcensusModule::ProcessRequestVoteServerResponse(
+void ConsensusModule::ProcessRequestVoteServerResponse(
     protocol::raft::RequestVote_Request& request,
     protocol::raft::RequestVote_Response& reply,
     const std::string& address) {
@@ -440,7 +461,7 @@ void ConcensusModule::ProcessRequestVoteServerResponse(
   }
 }
 
-std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule::ProcessAppendEntriesClientRequest(
+std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConsensusModule::ProcessAppendEntriesClientRequest(
     protocol::raft::AppendEntries_Request& request) {
   protocol::raft::AppendEntries_Response reply;
 
@@ -492,8 +513,8 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
       }
 
       // Commits log entries that have been committed by the LEADER
-      if (request.leadercommit() > m_commit_index.load()) {
-        int saved_commit_index = m_commit_index.load();
+      if (request.leadercommit() > CommitIndex()) {
+        int saved_commit_index = CommitIndex();
         int new_commit_index = std::min((int)request.leadercommit(), m_ctx.LogInstance()->LogSize());
         m_commit_index.store(new_commit_index);
         Logger::Debug("Setting commit index =", new_commit_index);
@@ -524,7 +545,7 @@ std::tuple<protocol::raft::AppendEntries_Response, grpc::Status> ConcensusModule
   return std::make_tuple(reply, grpc::Status::OK);
 }
 
-void ConcensusModule::ProcessAppendEntriesServerResponse(
+void ConsensusModule::ProcessAppendEntriesServerResponse(
     protocol::raft::AppendEntries_Request& request,
     protocol::raft::AppendEntries_Response& reply,
     const std::string& address) {
@@ -566,14 +587,14 @@ void ConcensusModule::ProcessAppendEntriesServerResponse(
   }
 }
 
-std::tuple<protocol::raft::GetConfiguration_Response, grpc::Status> ConcensusModule::ProcessGetConfigurationClientRequest() {
+std::tuple<protocol::raft::GetConfiguration_Response, grpc::Status> ConsensusModule::ProcessGetConfigurationClientRequest() {
   protocol::raft::GetConfiguration_Response reply;
   if (m_state != RaftState::LEADER) {
     grpc::Status err = ConstructError("Peer is not a leader", protocol::raft::Error::Code::Error_Code_NOT_LEADER);
     std::make_tuple(reply, err);
   }
 
-  if (m_configuration->State() != ClusterConfiguration::ConfigurationState::STABLE || m_commit_index < m_configuration->Id()) {
+  if (m_configuration->State() != ClusterConfiguration::ConfigurationState::STABLE || CommitIndex() < m_configuration->Id()) {
     grpc::Status err = ConstructError("Peer is not in a stable state", protocol::raft::Error::Code::Error_Code_RETRY);
     std::make_tuple(reply, err);
   }
@@ -583,7 +604,7 @@ std::tuple<protocol::raft::GetConfiguration_Response, grpc::Status> ConcensusMod
   return std::make_tuple(reply, grpc::Status::OK);
 }
 
-std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusModule::ProcessSetConfigurationClientRequest(
+std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConsensusModule::ProcessSetConfigurationClientRequest(
     protocol::raft::SetConfiguration_Request& request) {
   protocol::raft::SetConfiguration_Response reply;
   if (State() != RaftState::LEADER) {
@@ -619,7 +640,7 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
   for (auto& server:request.new_servers()) {
     new_servers.push_back(server.address());
   }
-  m_configuration->StartLogSync(m_commit_index, new_servers);
+  m_configuration->StartLogSync(CommitIndex(), new_servers);
   m_ctx.ClientInstance()->CreateConnections(m_configuration->ServerAddresses());
 
   while (!m_configuration->SyncComplete()) {
@@ -652,11 +673,11 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
 
   m_membership_sync.wait(lock, [this, joint_id, saved_term] {
     return (m_configuration->Id() > joint_id &&
-        m_commit_index.load() >= m_configuration->Id()) ||
+        CommitIndex() >= m_configuration->Id()) ||
         Term() != saved_term;
   });
 
-  if (m_configuration->Id() > joint_id && m_commit_index.load() >= m_configuration->Id()) {
+  if (m_configuration->Id() > joint_id && CommitIndex() >= m_configuration->Id()) {
     Logger::Debug("Configuration log entry committed successfully");
     reply.set_ok(true);
     return std::make_tuple(reply, grpc::Status::OK);
@@ -667,7 +688,7 @@ std::tuple<protocol::raft::SetConfiguration_Response, grpc::Status> ConcensusMod
   }
 }
 
-std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ConcensusModule::ProcessRegisterClientClientRequest() {
+std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ConsensusModule::ProcessRegisterClientClientRequest() {
   protocol::raft::RegisterClient_Response reply;
   if (State() != RaftState::LEADER) {
     reply.set_status(false);
@@ -685,7 +706,7 @@ std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ConcensusModul
   int session_id = Append(session_entry);
 
   m_session_sync.wait(lock, [this, session_id, saved_term] {
-      return m_commit_index.load() >= session_id || Term() != saved_term;
+      return CommitIndex() >= session_id || Term() != saved_term;
   });
 
   if (Term() != saved_term) {
@@ -702,7 +723,7 @@ std::tuple<protocol::raft::RegisterClient_Response, grpc::Status> ConcensusModul
   return std::make_tuple(reply, grpc::Status::OK);
 }
 
-std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule::ProcessClientRequestClientRequest(
+std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConsensusModule::ProcessClientRequestClientRequest(
     protocol::raft::ClientRequest_Request& request) {
   protocol::raft::ClientRequest_Response reply;
   if (State() != RaftState::LEADER) {
@@ -722,7 +743,7 @@ std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule
   int write_id = Append(write_entry);
 
   m_write_command_sync.wait(lock, [this, write_id, saved_term] {
-      return m_commit_index.load() >= write_id || Term() != saved_term;
+      return CommitIndex() >= write_id || Term() != saved_term;
   });
 
   if (Term() != saved_term) {
@@ -749,7 +770,7 @@ std::tuple<protocol::raft::ClientRequest_Response, grpc::Status> ConcensusModule
   return std::make_tuple(reply, grpc::Status::OK);
 }
 
-std::tuple<protocol::raft::ClientQuery_Response, grpc::Status> ConcensusModule::ProcessClientQueryClientRequest(
+std::tuple<protocol::raft::ClientQuery_Response, grpc::Status> ConsensusModule::ProcessClientQueryClientRequest(
     protocol::raft::ClientQuery_Request& request) {
   protocol::raft::ClientQuery_Response reply;
   if (State() != RaftState::LEADER) {

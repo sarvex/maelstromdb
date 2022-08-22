@@ -86,15 +86,22 @@ DeadlineTimer::DeadlineTimer(std::shared_ptr<TimerEvent> ctx)
 }
 
 DeadlineTimer::~DeadlineTimer() {
+}
+
+DeadlineTimerImpl::DeadlineTimerImpl(std::shared_ptr<TimerEvent> ctx)
+  : DeadlineTimer(ctx) {
+}
+
+DeadlineTimerImpl::~DeadlineTimerImpl() {
   Cancel();
 }
 
-void DeadlineTimer::Cancel() {
+void DeadlineTimerImpl::Cancel() {
   m_timer_ctx->Cancel();
   m_timer_ctx->TimerQueueInstance()->RemoveTimer(m_timer_ctx);
 }
 
-void DeadlineTimer::Reset() {
+void DeadlineTimerImpl::Reset() {
   auto timer_queue = m_timer_ctx->TimerQueueInstance();
   timer_queue->RemoveTimer(m_timer_ctx);
   m_timer_ctx->SetDeadline(m_timer_ctx->Delay());
@@ -102,12 +109,12 @@ void DeadlineTimer::Reset() {
   timer_queue->AddTimer(m_timer_ctx);
 }
 
-void DeadlineTimer::Reset(int delay) {
+void DeadlineTimerImpl::Reset(int delay) {
   m_timer_ctx->SetDelay(delay);
   Reset();
 }
 
-void DeadlineTimer::Reset(std::function<void()>&& callback, int delay) {
+void DeadlineTimerImpl::Reset(std::function<void()>&& callback, int delay) {
   m_timer_ctx->SetCallback(std::move(callback));
   Reset(delay);
 }
@@ -126,7 +133,7 @@ std::shared_ptr<DeadlineTimer> TimerQueue::CreateTimer(
     std::function<void()>&& callback) {
   auto ctx = std::make_shared<TimerCallbackEvent>(
       delay, std::move(executor), shared_from_this(), std::move(callback));
-  auto new_timer = std::make_shared<DeadlineTimer>(ctx);
+  auto new_timer = std::make_shared<DeadlineTimerImpl>(ctx);
 
   return new_timer;
 }
