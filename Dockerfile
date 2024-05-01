@@ -1,4 +1,4 @@
-FROM ubuntu:20.04 AS builder
+FROM ubuntu:24.04 AS builder
 
 # Prevent interactive tool from blocking package installations
 ENV DEBIAN_FRONTEND=noninteractive
@@ -42,7 +42,7 @@ WORKDIR /usr/src
 RUN cmake -GNinja -S . -B build
 RUN cmake --build build
 
-FROM ubuntu:20.04 AS runtime
+FROM ubuntu:24.04 AS runtime
 
 COPY --from=builder /usr/src/build/bin /usr/src/app
 RUN ldconfig
